@@ -1,6 +1,6 @@
 {
   "name": "imap-plugin",
-  "version": "0.1.0+codex.20260803103601",
+  "version": "0.1.0+codex.20260803104108",
   "description": "Connect Codex to generic IMAP mailboxes with safe read-only mailbox tools.",
   "author": {
     "name": "Paulo Santos"
@@ -28,8 +28,8 @@
       "Read this mailbox thread."
     ],
     "brandColor": "#256D85",
-    "composerIcon": "./assets/icon.svg",
-    "logo": "./assets/icon.svg",
-    "logoDark": "./assets/icon.svg"
+    "composerIcon": "./assets/imap-plugin-logo-square.png",
+    "logo": "./assets/imap-plugin-logo-square.png",
+    "logoDark": "./assets/imap-plugin-logo-square.png"
   }
 }
