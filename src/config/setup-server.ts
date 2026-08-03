@@ -1,6 +1,8 @@
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { randomBytes } from "node:crypto";
 import { URL } from "node:url";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { getAccount, readAccounts, removeAccount, upsertAccount } from "./accounts.js";
 import { publicAccount } from "./public-account.js";
 import { createCredentialProvider } from "../credentials/index.js";
@@ -31,6 +33,15 @@ function sendHtml(response: ServerResponse, html: string): void {
     "cache-control": "no-store"
   });
   response.end(html);
+}
+
+async function sendAsset(response: ServerResponse, path: string, contentType: string): Promise<void> {
+  const data = await readFile(path);
+  response.writeHead(200, {
+    "content-type": contentType,
+    "cache-control": "no-store"
+  });
+  response.end(data);
 }
 
 function readJson(request: IncomingMessage): Promise<unknown> {
@@ -114,6 +125,11 @@ async function handleRequest(
 
   if (url.pathname === "/" && request.method === "GET") {
     sendHtml(response, renderSetupPage(token));
+    return;
+  }
+
+  if (url.pathname === "/assets/imap-plugin-logo-square.png" && request.method === "GET") {
+    await sendAsset(response, join(process.cwd(), "assets", "imap-plugin-logo-square.png"), "image/png");
     return;
   }
 
@@ -222,6 +238,7 @@ function renderSetupPage(token: string): string {
       --page: #f5f7f4;
       --accent: #256d85;
       --accent-dark: #1f586d;
+      --accent-soft: #e8f4f7;
       --ok: #1c7c54;
       --warn: #b85c38;
       --focus: #e1b12c;
@@ -246,9 +263,24 @@ function renderSetupPage(token: string): string {
       display: flex;
       justify-content: space-between;
       gap: 24px;
-      align-items: flex-end;
+      align-items: center;
       padding-bottom: 20px;
       border-bottom: 1px solid var(--line);
+    }
+
+    .brand-lockup {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-lockup img {
+      width: 56px;
+      height: 56px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: #fff;
+      object-fit: contain;
     }
 
     h1, h2 {
@@ -307,6 +339,18 @@ function renderSetupPage(token: string): string {
       color: var(--muted);
     }
 
+    .field-heading {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .help-text {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
     input, select {
       width: 100%;
       min-height: 42px;
@@ -324,6 +368,72 @@ function renderSetupPage(token: string): string {
     }
 
     .span-2 { grid-column: 1 / -1; }
+
+    .credential-card {
+      display: grid;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: var(--accent-soft);
+    }
+
+    .credential-card strong {
+      color: var(--ink);
+    }
+
+    .credential-topline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .info {
+      position: relative;
+    }
+
+    .info summary {
+      width: 26px;
+      height: 26px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      color: var(--accent-dark);
+      background: #fff;
+      cursor: pointer;
+      font-weight: 800;
+      list-style: none;
+    }
+
+    .info summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .info-panel {
+      position: absolute;
+      right: 0;
+      top: 34px;
+      z-index: 4;
+      width: min(340px, calc(100vw - 48px));
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      color: var(--ink);
+      background: #fff;
+      box-shadow: 0 18px 40px rgba(31, 41, 51, 0.16);
+      font-size: 13px;
+    }
+
+    .info-panel p {
+      margin: 0;
+    }
+
+    .info-panel p + p {
+      margin-top: 8px;
+    }
 
     .inline {
       display: flex;
@@ -425,6 +535,10 @@ function renderSetupPage(token: string): string {
         display: block;
       }
 
+      .brand-lockup {
+        align-items: flex-start;
+      }
+
       .status {
         margin-top: 12px;
         text-align: left;
@@ -445,9 +559,12 @@ function renderSetupPage(token: string): string {
 <body>
   <main>
     <header>
-      <div>
-        <h1>IMAP Mailboxes</h1>
-        <p class="subhead">Configure mailbox profiles, test login, and choose where credentials are resolved.</p>
+      <div class="brand-lockup">
+        <img src="/assets/imap-plugin-logo-square.png" alt="">
+        <div>
+          <h1>IMAP Mailboxes</h1>
+          <p class="subhead">Configure mailbox profiles, test login, and keep secrets in your computer's secure credential store.</p>
+        </div>
       </div>
       <div class="status" id="status">Local setup server ready</div>
     </header>
@@ -456,7 +573,7 @@ function renderSetupPage(token: string): string {
       <section>
         <h2>Connection</h2>
         <form id="account-form">
-          <label>Account ID
+          <label>Profile name
             <input id="accountId" name="accountId" autocomplete="off" required pattern="[A-Za-z0-9_-]+" placeholder="personal">
           </label>
           <label>Username
@@ -468,22 +585,30 @@ function renderSetupPage(token: string): string {
           <label>Port
             <input id="port" name="port" type="number" min="1" max="65535" required value="993">
           </label>
-          <label>Credential Provider
-            <select id="credentialProvider" name="credentialProvider">
-              <option value="local-keychain">Local keychain</option>
-              <option value="1password">1Password</option>
-              <option value="env">Environment variable</option>
-            </select>
-          </label>
           <label class="inline">
             <input id="secure" name="secure" type="checkbox" checked>
             Use TLS
           </label>
-          <label id="password-row" class="span-2">Password or app password
-            <input id="password" name="password" type="password" autocomplete="current-password" placeholder="Stored only in the OS keychain">
-          </label>
-          <label id="ref-row" class="span-2" hidden>Credential reference
-            <input id="credentialRef" name="credentialRef" placeholder="op://Private/Mailbox/password or ENV_VAR_NAME">
+          <div class="credential-card span-2">
+            <div class="credential-topline">
+              <div>
+                <strong>Credential storage: Local keychain</strong>
+                <div class="help-text">V1 stores the mailbox password in your operating system's secure credential store.</div>
+              </div>
+              <details class="info">
+                <summary aria-label="What is a keychain?">i</summary>
+                <div class="info-panel">
+                  <p><strong>A keychain</strong> is the secure password vault built into your computer, such as Windows Credential Manager or macOS Keychain.</p>
+                  <p>IMAP Mailboxes saves the password there instead of writing it into the account profile file. Codex receives the secret only when it needs to test or read the mailbox.</p>
+                  <p>Use an app password when your email provider supports one.</p>
+                </div>
+              </details>
+            </div>
+          </div>
+          <label id="password-row" class="span-2">
+            <span class="field-heading">Password or app password</span>
+            <input id="password" name="password" type="password" autocomplete="current-password" placeholder="Required for new accounts">
+            <span class="help-text">Leave blank when editing an existing profile to keep the saved password unchanged.</span>
           </label>
           <div class="actions span-2">
             <button class="primary" type="submit">Save account</button>
@@ -505,9 +630,6 @@ function renderSetupPage(token: string): string {
     const TOKEN = ${tokenJson};
     const headers = { "content-type": "application/json", "x-imap-plugin-token": TOKEN };
     const form = document.querySelector("#account-form");
-    const provider = document.querySelector("#credentialProvider");
-    const passwordRow = document.querySelector("#password-row");
-    const refRow = document.querySelector("#ref-row");
     const message = document.querySelector("#message");
     const accountsEl = document.querySelector("#accounts");
     const statusEl = document.querySelector("#status");
@@ -518,14 +640,6 @@ function renderSetupPage(token: string): string {
       statusEl.textContent = text || "Local setup server ready";
     }
 
-    function updateProviderFields() {
-      const usesLocal = provider.value === "local-keychain";
-      passwordRow.hidden = !usesLocal;
-      refRow.hidden = usesLocal;
-      document.querySelector("#credentialRef").placeholder =
-        provider.value === "1password" ? "op://Private/Mailbox/password" : "IMAP_PLUGIN_PERSONAL_PASSWORD";
-    }
-
     function formPayload() {
       return {
         accountId: document.querySelector("#accountId").value.trim(),
@@ -533,8 +647,7 @@ function renderSetupPage(token: string): string {
         port: Number(document.querySelector("#port").value),
         secure: document.querySelector("#secure").checked,
         username: document.querySelector("#username").value.trim(),
-        credentialProvider: provider.value,
-        credentialRef: document.querySelector("#credentialRef").value.trim() || undefined,
+        credentialProvider: "local-keychain",
         password: document.querySelector("#password").value || undefined
       };
     }
@@ -572,7 +685,7 @@ function renderSetupPage(token: string): string {
           </div>
         \`;
         item.querySelector("strong").textContent = account.id;
-        item.querySelector(".pill").textContent = account.credentialProvider;
+        item.querySelector(".pill").textContent = "Local keychain";
         item.querySelector("small").textContent = account.username + " at " + account.host + ":" + account.port;
         item.querySelector('[data-action="test"]').addEventListener("click", async () => {
           setMessage("Testing " + account.id + "...");
@@ -589,10 +702,7 @@ function renderSetupPage(token: string): string {
           document.querySelector("#host").value = account.host;
           document.querySelector("#port").value = account.port;
           document.querySelector("#secure").checked = account.secure;
-          provider.value = account.credentialProvider;
-          document.querySelector("#credentialRef").value = account.credentialRef || "";
           document.querySelector("#password").value = "";
-          updateProviderFields();
           setMessage("Loaded " + account.id + " for editing.");
         });
         item.querySelector('[data-action="remove"]').addEventListener("click", async () => {
@@ -609,7 +719,6 @@ function renderSetupPage(token: string): string {
       }
     }
 
-    provider.addEventListener("change", updateProviderFields);
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       setMessage("Saving account...");
@@ -631,12 +740,9 @@ function renderSetupPage(token: string): string {
       }
     });
     form.addEventListener("reset", () => setTimeout(() => {
-      provider.value = "local-keychain";
-      updateProviderFields();
       setMessage("");
     }));
 
-    updateProviderFields();
     loadAccounts().catch((error) => setMessage(error.message, "warn"));
   </script>
 </body>
