@@ -18,14 +18,22 @@ function jsonResponse(value: unknown) {
   };
 }
 
+async function setupPageResponse() {
+  const setup = await startSetupServer();
+  return jsonResponse({
+    url: setup.url,
+    host: setup.host,
+    port: setup.port
+  });
+}
+
 export function registerTools(server: McpServer): void {
   server.tool("imap_open_setup", "Get the local setup page URL for configuring and testing IMAP accounts.", {}, async () => {
-    const setup = await startSetupServer();
-    return jsonResponse({
-      url: setup.url,
-      host: setup.host,
-      port: setup.port
-    });
+    return setupPageResponse();
+  });
+
+  server.tool("imap_configure", "Open the local configuration page to add, test, edit, or reconfigure IMAP accounts.", {}, async () => {
+    return setupPageResponse();
   });
 
   server.tool("imap_add_account", "Add or update an IMAP account profile.", addAccountSchema.shape, async (input) => {

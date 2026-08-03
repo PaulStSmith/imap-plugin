@@ -47,7 +47,7 @@ npm start
 
 ## Setup Page
 
-The MCP server starts a localhost setup page when it launches. Ask Codex to call `imap_open_setup`, then open the returned URL.
+The MCP server starts a localhost setup page when it launches. Ask Codex to call `imap_configure`, then open the returned URL. `imap_open_setup` remains as a compatibility alias.
 
 The page supports:
 
@@ -55,7 +55,7 @@ The page supports:
 - Test a connection before saving.
 - Test saved accounts.
 - Remove saved accounts and local keychain secrets.
-- Choose local keychain, 1Password, or environment-variable credentials.
+- Store credentials in the local operating system keychain.
 
 By default the setup page binds to `127.0.0.1:37891`. If that port is busy, it falls back to an available local port. You can override the preferred port with:
 
@@ -102,6 +102,8 @@ imap-plugin account add personal \
 
 ## MCP Tools
 
+- `imap_configure`
+- `imap_open_setup`
 - `imap_add_account`
 - `imap_list_accounts`
 - `imap_remove_account`
