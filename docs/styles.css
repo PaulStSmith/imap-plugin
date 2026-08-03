@@ -80,9 +80,10 @@ nav a:hover {
   display: flex;
   align-items: center;
   background:
-    linear-gradient(90deg, rgba(23, 35, 43, 0.92), rgba(23, 35, 43, 0.68) 52%, rgba(23, 35, 43, 0.2)),
-    url("./assets/imap-plugin-logo.png") center / cover no-repeat;
+    radial-gradient(circle at 78% 42%, rgba(84, 189, 230, 0.16), transparent 30%),
+    linear-gradient(135deg, #13242d, #1e3440 54%, #13242d);
   color: #fff;
+  overflow: hidden;
 }
 
 .hero-inner,
@@ -94,7 +95,24 @@ footer {
 }
 
 .hero-inner {
-  padding: 88px 0 72px;
+  display: grid;
+  grid-template-columns: minmax(0, 0.78fr) minmax(360px, 1.22fr);
+  gap: 36px;
+  align-items: center;
+  padding: 84px 0 70px;
+}
+
+.hero-copy-block {
+  position: relative;
+  z-index: 2;
+}
+
+.hero-logo {
+  width: 100%;
+  max-height: min(620px, 66vh);
+  object-fit: contain;
+  justify-self: end;
+  filter: drop-shadow(0 24px 44px rgba(0, 0, 0, 0.34));
 }
 
 .eyebrow {
@@ -273,8 +291,22 @@ footer {
   .hero {
     min-height: 72vh;
     background:
-      linear-gradient(180deg, rgba(23, 35, 43, 0.94), rgba(23, 35, 43, 0.7)),
-      url("./assets/imap-plugin-logo.png") center / cover no-repeat;
+      radial-gradient(circle at 50% 24%, rgba(84, 189, 230, 0.15), transparent 34%),
+      linear-gradient(180deg, #13242d, #1e3440);
+  }
+
+  .hero-inner {
+    display: flex;
+    flex-direction: column-reverse;
+    align-items: flex-start;
+    gap: 18px;
+    padding: 44px 0 52px;
+  }
+
+  .hero-logo {
+    width: min(100%, 520px);
+    max-height: 36vh;
+    align-self: center;
   }
 
   h1 {
