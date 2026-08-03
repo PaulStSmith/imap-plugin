@@ -17,6 +17,8 @@ export interface SetupServerInfo {
   token: string;
 }
 
+const SETUP_UI_VERSION = "20260803.1115";
+
 let setupServerPromise: Promise<SetupServerInfo> | undefined;
 
 function sendJson(response: ServerResponse, status: number, value: unknown): void {
@@ -193,7 +195,7 @@ function listenOnPort(port: number, token: string): Promise<SetupServerInfo> {
         host,
         port: resolvedPort,
         token,
-        url: `http://${host}:${resolvedPort}/?token=${encodeURIComponent(token)}`
+        url: `http://${host}:${resolvedPort}/?token=${encodeURIComponent(token)}&v=${encodeURIComponent(SETUP_UI_VERSION)}`
       });
     });
   });
@@ -222,11 +224,16 @@ export async function startSetupServer(): Promise<SetupServerInfo> {
 
 function renderSetupPage(token: string): string {
   const tokenJson = JSON.stringify(token);
+  const setupVersionJson = JSON.stringify(SETUP_UI_VERSION);
+  const processIdJson = JSON.stringify(process.pid);
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="cache-control" content="no-store">
+  <meta http-equiv="pragma" content="no-cache">
+  <meta http-equiv="expires" content="0">
   <title>IMAP Mailboxes Setup</title>
   <style>
     :root {
@@ -309,6 +316,13 @@ function renderSetupPage(token: string): string {
       text-align: right;
       color: var(--muted);
       font-size: 14px;
+    }
+
+    .status strong {
+      display: block;
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 800;
     }
 
     .layout {
@@ -475,6 +489,13 @@ function renderSetupPage(token: string): string {
     button.primary:hover { background: var(--accent-dark); }
     button:hover { border-color: var(--accent); }
 
+    button.compact {
+      min-height: 30px;
+      padding: 5px 9px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
     .accounts {
       display: grid;
       gap: 10px;
@@ -566,7 +587,11 @@ function renderSetupPage(token: string): string {
           <p class="subhead">Configure mailbox profiles, test login, and keep secrets in your computer's secure credential store.</p>
         </div>
       </div>
-      <div class="status" id="status">Local setup server ready</div>
+      <div class="status">
+        <strong>Setup UI ${SETUP_UI_VERSION}</strong>
+        <span id="status">Local setup server ready</span>
+        <button class="compact" type="button" id="reload-page">Reload</button>
+      </div>
     </header>
 
     <div class="layout">
@@ -628,6 +653,8 @@ function renderSetupPage(token: string): string {
 
   <script>
     const TOKEN = ${tokenJson};
+    const SETUP_UI_VERSION = ${setupVersionJson};
+    const SERVER_PID = ${processIdJson};
     const headers = { "content-type": "application/json", "x-imap-plugin-token": TOKEN };
     const form = document.querySelector("#account-form");
     const message = document.querySelector("#message");
@@ -639,6 +666,9 @@ function renderSetupPage(token: string): string {
       message.className = "message " + kind;
       statusEl.textContent = text || "Local setup server ready";
     }
+
+    document.title = "IMAP Mailboxes Setup " + SETUP_UI_VERSION;
+    console.info("IMAP Mailboxes setup UI", { version: SETUP_UI_VERSION, pid: SERVER_PID });
 
     function formPayload() {
       return {
@@ -742,6 +772,11 @@ function renderSetupPage(token: string): string {
     form.addEventListener("reset", () => setTimeout(() => {
       setMessage("");
     }));
+    document.querySelector("#reload-page").addEventListener("click", () => {
+      const url = new URL(window.location.href);
+      url.searchParams.set("r", Date.now().toString());
+      window.location.replace(url.toString());
+    });
 
     loadAccounts().catch((error) => setMessage(error.message, "warn"));
   </script>
