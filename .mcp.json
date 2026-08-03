@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "imap-plugin": {
+      "command": "node",
+      "args": [
+        "dist/server.js"
+      ],
+      "env": {
+        "IMAP_PLUGIN_CREDENTIAL_PROVIDER": "local-keychain"
+      }
+    }
+  }
+}

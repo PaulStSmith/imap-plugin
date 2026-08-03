@@ -1,0 +1,32 @@
+{
+  "name": "imap-plugin",
+  "version": "0.1.0",
+  "description": "Connect Codex to generic IMAP mailboxes with safe read-only mailbox tools.",
+  "author": {
+    "name": "Paulo Santos"
+  },
+  "license": "MIT",
+  "keywords": [
+    "imap",
+    "email",
+    "mailbox",
+    "mcp"
+  ],
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "IMAP Mailboxes",
+    "shortDescription": "Read generic IMAP mailboxes from Codex.",
+    "longDescription": "Connect generic IMAP mailboxes to Codex for folder listing, message search, message reading, and attachment metadata without requiring a provider-specific mail connector.",
+    "developerName": "Paulo Santos",
+    "category": "Productivity",
+    "capabilities": [
+      "Read"
+    ],
+    "defaultPrompt": [
+      "Summarize my IMAP inbox.",
+      "Find recent unread email.",
+      "Read this mailbox thread."
+    ],
+    "brandColor": "#256D85"
+  }
+}
