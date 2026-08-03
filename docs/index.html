@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IMAP Mailboxes for Codex</title>
+  <meta name="description" content="Universal IMAP mailbox access for Codex, starting with safe read-only email search and message reading.">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="#top" aria-label="IMAP Mailboxes home">
+      <img src="./assets/imap-plugin-logo-square.png" alt="">
+      <span>IMAP Mailboxes</span>
+    </a>
+    <nav aria-label="Primary">
+      <a href="#why">Why</a>
+      <a href="#plans">Pricing</a>
+      <a href="#setup">Setup</a>
+      <a href="https://github.com/PaulStSmith/imap-plugin">GitHub</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="hero-inner">
+        <p class="eyebrow">Universal mailbox access for Codex</p>
+        <h1>IMAP Mailboxes</h1>
+        <p class="hero-copy">
+          Bring generic IMAP email accounts into Codex without waiting for a provider-specific connector.
+          Start with safe read-only search, summaries, and message reading; unlock send and mailbox actions later.
+        </p>
+        <div class="hero-actions">
+          <a class="button primary" href="https://github.com/PaulStSmith/imap-plugin">View on GitHub</a>
+          <a class="button" href="#plans">See pricing</a>
+        </div>
+      </div>
+    </section>
+
+    <section id="why" class="section">
+      <div class="section-heading">
+        <p class="eyebrow">Why it exists</p>
+        <h2>Email is bigger than Gmail and Outlook.</h2>
+      </div>
+      <div class="feature-grid">
+        <article>
+          <h3>Any mailbox</h3>
+          <p>Designed for personal domains, cPanel mail, Fastmail, Zoho, self-hosted Dovecot, and other IMAP-compatible accounts.</p>
+        </article>
+        <article>
+          <h3>Read-first safety</h3>
+          <p>The free version focuses on folder listing, message search, message reading, and attachment metadata without send permissions.</p>
+        </article>
+        <article>
+          <h3>Credential choice</h3>
+          <p>Use local keychain storage by default, or resolve secrets from 1Password or environment variables for multi-machine workflows.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="band">
+      <div>
+        <p class="eyebrow">Built for trust</p>
+        <h2>Sending should be deliberate.</h2>
+      </div>
+      <p>
+        The plugin starts read-only because email actions carry real risk. Paid sending will use explicit confirmation,
+        visible recipient and body review, and account identity checks before any SMTP action.
+      </p>
+    </section>
+
+    <section id="plans" class="section">
+      <div class="section-heading">
+        <p class="eyebrow">Pricing</p>
+        <h2>Useful for free. Powerful when you need actions.</h2>
+      </div>
+      <div class="pricing-grid">
+        <article class="plan">
+          <div>
+            <h3>Free</h3>
+            <p class="price">$0</p>
+            <p>Full read access for one generic IMAP mailbox.</p>
+          </div>
+          <ul>
+            <li>Connect one IMAP account</li>
+            <li>List folders</li>
+            <li>Search and read messages</li>
+            <li>Summarize inboxes and threads</li>
+            <li>Extract tasks and attachment metadata</li>
+          </ul>
+        </article>
+
+        <article class="plan featured">
+          <div>
+            <h3>Mail Actions</h3>
+            <p class="price">$5<span>/month</span></p>
+            <p>For people who want Codex to help compose and send mail.</p>
+          </div>
+          <ul>
+            <li>SMTP send and reply workflows</li>
+            <li>Draft-first sending</li>
+            <li>Forward and reply with proper headers</li>
+            <li>Move, archive, and mark messages</li>
+            <li>Multiple mailboxes</li>
+          </ul>
+        </article>
+
+        <article class="plan">
+          <div>
+            <h3>Pro</h3>
+            <p class="price">Later</p>
+            <p>For heavier personal and team mailbox workflows.</p>
+          </div>
+          <ul>
+            <li>Higher usage limits</li>
+            <li>Shared mailbox support</li>
+            <li>Vault-backed team credentials</li>
+            <li>Audit-friendly mail actions</li>
+            <li>Priority support</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section id="setup" class="section setup">
+      <div class="section-heading">
+        <p class="eyebrow">Setup</p>
+        <h2>Configure from the plugin page.</h2>
+      </div>
+      <ol>
+        <li>Install IMAP Mailboxes from the Personal plugin marketplace.</li>
+        <li>Click Try now and ask Codex: <code>Open the IMAP plugin setup page</code>.</li>
+        <li>Add your IMAP host, port, username, TLS setting, and credential provider.</li>
+        <li>Use Test connection before saving the mailbox profile.</li>
+      </ol>
+    </section>
+  </main>
+
+  <footer>
+    <span>IMAP Mailboxes for Codex</span>
+    <a href="https://github.com/PaulStSmith/imap-plugin">Source on GitHub</a>
+  </footer>
+</body>
+</html>

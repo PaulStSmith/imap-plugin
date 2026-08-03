@@ -1,11 +1,12 @@
 {
   "name": "imap-plugin",
-  "version": "0.1.0+codex.20260803104108",
+  "version": "0.1.0+codex.20260803105133",
   "description": "Connect Codex to generic IMAP mailboxes with safe read-only mailbox tools.",
   "author": {
     "name": "Paulo Santos"
   },
   "license": "MIT",
+  "homepage": "https://paulstsmith.github.io/imap-plugin/",
   "keywords": [
     "imap",
     "email",
@@ -22,10 +23,11 @@
     "capabilities": [
       "Read"
     ],
+    "websiteURL": "https://paulstsmith.github.io/imap-plugin/",
     "defaultPrompt": [
+      "Open the IMAP plugin setup page.",
       "Summarize my IMAP inbox.",
-      "Find recent unread email.",
-      "Read this mailbox thread."
+      "Find recent unread email."
     ],
     "brandColor": "#256D85",
     "composerIcon": "./assets/imap-plugin-logo-square.png",
