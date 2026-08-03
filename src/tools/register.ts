@@ -1,4 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { importLicenseFile, licenseStatus } from "../billing/license.js";
+import { subscriptionRequired, subscriptionStatus } from "../billing/subscription.js";
 import { getAccount, readAccounts, removeAccount, upsertAccount } from "../config/accounts.js";
 import { publicAccount } from "../config/public-account.js";
 import { startSetupServer } from "../config/setup-server.js";
@@ -73,6 +75,22 @@ export function registerTools(server: McpServer): void {
   server.tool("imap_list_accounts", "List configured IMAP account profiles without secrets.", {}, async () => {
     const accounts = await readAccounts();
     return jsonResponse({ accounts: accounts.map(publicAccount) });
+  });
+
+  server.tool("imap_subscription_status", "Check whether a paid IMAP Mailboxes feature has an active subscription.", paidFeatureSchema.shape, async (input) => {
+    return jsonResponse({ subscription: await subscriptionStatus(input.feature) });
+  });
+
+  server.tool("imap_license_status", "Check the installed ByteForge license file for this IMAP Plugin.", {}, async () => {
+    return jsonResponse({ license: await licenseStatus() });
+  });
+
+  server.tool("imap_install_license", "Install a local ByteForge .lic license file for this IMAP Plugin.", licenseInstallSchema.shape, async (input) => {
+    return jsonResponse({ license: await importLicenseFile(input.path) });
+  });
+
+  server.tool("imap_upgrade_subscription", "Get the payment link for a paid IMAP Mailboxes feature.", paidFeatureSchema.shape, async (input) => {
+    return jsonResponse(subscriptionRequired(input.feature, "Paid mail actions"));
   });
 
   server.tool("imap_remove_account", "Remove an IMAP account profile and its local keychain password if present.", accountIdSchema.shape, async (input) => {

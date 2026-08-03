@@ -7,7 +7,7 @@ interface AccountsFile {
   accounts: AccountProfile[];
 }
 
-function configDir(): string {
+export function configDir(): string {
   if (process.env.IMAP_PLUGIN_CONFIG_DIR) {
     return process.env.IMAP_PLUGIN_CONFIG_DIR;
   }

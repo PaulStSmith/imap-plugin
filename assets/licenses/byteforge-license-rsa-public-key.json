@@ -1,0 +1,9 @@
+{
+  "keyId": "byteforge-license-rs256-2026-08-03",
+  "company": "ByteForge Ltd.",
+  "algorithm": "RS256",
+  "usage": "google-apps-script-license-signature-verification",
+  "publicKeyPemFile": "byteforge-license-rsa-public-key.pem",
+  "publicKeySha256Fingerprint": "44:85:49:28:1d:5e:38:10:fd:18:c9:91:b5:f4:96:a2:7c:ef:eb:2b:84:4a:cd:36:77:68:83:f9:c1:a9:80:1f",
+  "generatedAt": "2026-08-03T20:08:11.396Z"
+}
