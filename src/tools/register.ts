@@ -3,9 +3,20 @@ import { getAccount, readAccounts, removeAccount, upsertAccount } from "../confi
 import { publicAccount } from "../config/public-account.js";
 import { startSetupServer } from "../config/setup-server.js";
 import { createCredentialProvider } from "../credentials/index.js";
-import { listFolders, readMessage, searchMessages, testAccount } from "../mail/imap-client.js";
+import { listFolders, readAttachment, readMessage, readMessages, searchAndReadMessages, searchMessages, testAccount } from "../mail/imap-client.js";
 import { AccountProfile } from "../types.js";
-import { accountIdSchema, addAccountSchema, mailboxSchema, readMessageSchema, searchSchema } from "./schemas.js";
+import {
+  accountIdSchema,
+  addAccountSchema,
+  mailboxSchema,
+  paidFeatureSchema,
+  licenseInstallSchema,
+  readAttachmentSchema,
+  readMessageSchema,
+  readMessagesSchema,
+  searchAndReadSchema,
+  searchSchema
+} from "./schemas.js";
 
 function jsonResponse(value: unknown) {
   return {
@@ -88,6 +99,21 @@ export function registerTools(server: McpServer): void {
   server.tool("imap_read_message", "Read one message by mailbox and IMAP UID.", readMessageSchema.shape, async (input) => {
     const message = await readMessage(await getAccount(input.accountId), input.mailbox, input.uid);
     return jsonResponse({ message });
+  });
+
+  server.tool("imap_read_attachment", "Read one attachment from a message as base64 content.", readAttachmentSchema.shape, async (input) => {
+    const attachment = await readAttachment(await getAccount(input.accountId), input.mailbox, input.uid, input.attachmentIndex);
+    return jsonResponse({ attachment });
+  });
+
+  server.tool("imap_read_messages", "Read multiple messages by mailbox and IMAP UIDs using one IMAP connection.", readMessagesSchema.shape, async (input) => {
+    const messages = await readMessages(await getAccount(input.accountId), input);
+    return jsonResponse({ messages });
+  });
+
+  server.tool("imap_search_and_read_messages", "Search messages and read the matches using one IMAP connection.", searchAndReadSchema.shape, async (input) => {
+    const messages = await searchAndReadMessages(await getAccount(input.accountId), input);
+    return jsonResponse({ messages });
   });
 
   server.tool("imap_get_folder_status", "Get message counts for a mailbox.", mailboxSchema.shape, async (input) => {

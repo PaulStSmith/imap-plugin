@@ -36,8 +36,13 @@ export interface MessageDetail extends MessageSummary {
 }
 
 export interface AttachmentMetadata {
+  index: number;
   filename: string | null;
   contentType: string;
   size: number | null;
   contentId: string | null;
+}
+
+export interface AttachmentContent extends AttachmentMetadata {
+  contentBase64: string;
 }
