@@ -8,6 +8,10 @@ export interface AccountProfile {
   username: string;
   credentialProvider: CredentialProviderKind;
   credentialRef?: string;
+  smtpHost?: string;
+  smtpPort?: number;
+  smtpSecure?: boolean;
+  smtpUsername?: string;
 }
 
 export interface MailboxCredential {
@@ -30,6 +34,9 @@ export interface MessageSummary {
 export interface MessageDetail extends MessageSummary {
   cc: string[];
   bcc: string[];
+  messageId: string | null;
+  inReplyTo: string | null;
+  references: string[];
   text: string;
   html?: string;
   attachments: AttachmentMetadata[];

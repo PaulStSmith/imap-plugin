@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { importLicenseFile, licenseStatus } from "./billing/license.js";
+import { cleanupConfig } from "./config/cleanup.js";
 import { getAccount, readAccounts, removeAccount, upsertAccount } from "./config/accounts.js";
 import { createCredentialProvider, defaultCredentialProviderKind } from "./credentials/index.js";
 import { testAccount } from "./mail/imap-client.js";
@@ -14,6 +15,18 @@ program
 
 const account = program.command("account").description("Manage account profiles.");
 const license = program.command("license").description("Manage the local ByteForge license file.");
+
+program
+  .command("cleanup")
+  .option("--yes", "Confirm removal of local plugin config and local-keychain secrets.")
+  .description("Remove all local plugin config files and local-keychain secrets.")
+  .action(async (options) => {
+    if (!options.yes) {
+      throw new Error("Refusing to remove config without --yes.");
+    }
+
+    console.log(JSON.stringify(await cleanupConfig(), null, 2));
+  });
 
 license
   .command("status")
@@ -48,6 +61,10 @@ account
   .option("--credential-provider <provider>", "local-keychain, 1password, or env")
   .option("--credential-ref <ref>", "1Password op:// reference or environment variable name")
   .option("--password <password>", "Password for local-keychain storage")
+  .option("--smtp-host <host>", "SMTP host for send/reply actions")
+  .option("--smtp-port <port>", "SMTP port")
+  .option("--smtp-secure <secure>", "Use implicit TLS for SMTP")
+  .option("--smtp-username <username>", "SMTP username")
   .action(async (accountId: string, options) => {
     const credentialProvider = (options.credentialProvider ?? defaultCredentialProviderKind()) as CredentialProviderKind;
     const profile: AccountProfile = {
@@ -57,7 +74,11 @@ account
       secure: options.secure === "true",
       username: options.username,
       credentialProvider,
-      credentialRef: options.credentialRef
+      credentialRef: options.credentialRef,
+      smtpHost: options.smtpHost,
+      smtpPort: options.smtpPort ? Number(options.smtpPort) : undefined,
+      smtpSecure: options.smtpSecure === undefined ? undefined : options.smtpSecure === "true",
+      smtpUsername: options.smtpUsername
     };
 
     if (credentialProvider === "local-keychain") {

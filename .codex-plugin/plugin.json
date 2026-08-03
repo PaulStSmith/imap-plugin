@@ -1,7 +1,7 @@
 {
   "name": "imap-plugin",
-  "version": "0.1.0+codex.20260803114200",
-  "description": "Connect Codex to generic IMAP mailboxes with safe read-only mailbox tools.",
+  "version": "0.1.0+codex.20260803180500",
+  "description": "Connect Codex to generic IMAP mailboxes with read tools and paid mail actions.",
   "author": {
     "name": "Paulo Santos"
   },
@@ -16,18 +16,20 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "IMAP Mailboxes",
-    "shortDescription": "Read generic IMAP mailboxes from Codex.",
-    "longDescription": "Connect generic IMAP mailboxes to Codex for folder listing, message search, message reading, and attachment metadata without requiring a provider-specific mail connector.",
+    "shortDescription": "Read IMAP mailboxes and enable paid mail actions from Codex.",
+    "longDescription": "Connect generic IMAP mailboxes to Codex for folder listing, message search, message reading, attachment access, and subscriber-controlled SMTP/IMAP mail actions without requiring a provider-specific mail connector.",
     "developerName": "Paulo Santos",
     "category": "Productivity",
     "capabilities": [
-      "Read"
+      "Read",
+      "Write"
     ],
     "websiteURL": "https://paulstsmith.github.io/imap-plugin/",
     "privacyPolicyURL": "https://paulstsmith.github.io/imap-plugin/privacy.html",
     "termsOfServiceURL": "https://paulstsmith.github.io/imap-plugin/terms.html",
     "defaultPrompt": [
       "Configure my IMAP mailboxes.",
+      "Enable SMTP sending for IMAP Mailboxes.",
       "Summarize my IMAP inbox.",
       "Find recent unread email."
     ],

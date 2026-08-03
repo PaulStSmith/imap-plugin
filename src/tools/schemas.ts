@@ -12,7 +12,11 @@ export const addAccountSchema = z.object({
   username: z.string().min(1),
   credentialProvider: z.enum(["local-keychain", "1password", "env"]).default("local-keychain"),
   credentialRef: z.string().optional().describe("1Password op:// reference or environment variable name."),
-  password: z.string().optional().describe("Password to store when using local-keychain.")
+  password: z.string().optional().describe("Password to store when using local-keychain."),
+  smtpHost: z.string().optional().describe("SMTP host for send/reply actions. Defaults from the IMAP host when omitted."),
+  smtpPort: z.number().int().min(1).max(65535).optional().describe("SMTP port. Defaults to 587, or 465 when smtpSecure is true."),
+  smtpSecure: z.boolean().optional().describe("Use implicit TLS for SMTP, usually port 465. When false, STARTTLS is attempted."),
+  smtpUsername: z.string().optional().describe("SMTP username. Defaults to the IMAP username when omitted.")
 });
 
 export const mailboxSchema = accountIdSchema.extend({
@@ -75,4 +79,71 @@ export const paidFeatureSchema = z.object({
 
 export const licenseInstallSchema = z.object({
   path: z.string().min(1).describe("Local path to the ByteForge .lic file.")
+});
+
+const uidActionSchema = mailboxSchema.extend({
+  uids: z.array(z.number().int().positive()).min(1).max(100)
+});
+
+export const messageFlagSchema = uidActionSchema.extend({
+  mode: z.enum(["add", "remove", "set"]).default("add"),
+  flags: z.array(z.string().min(1)).min(1).max(20).describe("IMAP flags such as \\Seen, \\Flagged, \\Answered, \\Draft, or provider keywords.")
+});
+
+export const messageColorSchema = uidActionSchema.extend({
+  color: z.enum(["red", "orange", "yellow", "green", "blue", "purple", "grey"])
+});
+
+export const moveMessagesSchema = uidActionSchema.extend({
+  destination: z.string().min(1).describe("Destination mailbox/folder path.")
+});
+
+export const appendMessageSchema = mailboxSchema.extend({
+  raw: z.string().min(1).describe("Raw RFC 822 message content to append."),
+  flags: z.array(z.string().min(1)).max(20).default([]),
+  internalDate: z.string().optional().describe("Optional internal date for the appended message.")
+});
+
+export const folderPathSchema = accountIdSchema.extend({
+  path: z.string().min(1).describe("Mailbox/folder path.")
+});
+
+export const renameFolderSchema = folderPathSchema.extend({
+  newPath: z.string().min(1).describe("New mailbox/folder path.")
+});
+
+const addressListSchema = z.array(z.string().email()).min(1).max(100);
+const optionalAddressListSchema = z.array(z.string().email()).max(100).optional();
+const smtpOverrideSchema = z.object({
+  smtpHost: z.string().optional(),
+  smtpPort: z.number().int().min(1).max(65535).optional(),
+  smtpSecure: z.boolean().optional(),
+  smtpUsername: z.string().optional()
+});
+
+export const sendMessageSchema = accountIdSchema.merge(smtpOverrideSchema).extend({
+  to: addressListSchema,
+  cc: optionalAddressListSchema,
+  bcc: optionalAddressListSchema,
+  subject: z.string().default(""),
+  text: z.string().optional(),
+  html: z.string().optional()
+});
+
+export const replyMessageSchema = readMessageSchema.merge(smtpOverrideSchema).extend({
+  replyAll: z.boolean().default(false),
+  to: optionalAddressListSchema,
+  cc: optionalAddressListSchema,
+  bcc: optionalAddressListSchema,
+  subject: z.string().optional(),
+  text: z.string().min(1),
+  html: z.string().optional()
+});
+
+export const preferencesSchema = z.object({
+  smtpActionsEnabled: z.boolean().describe("Allow subscriber-only SMTP send, reply, and round-trip actions.")
+});
+
+export const cleanupConfigSchema = z.object({
+  confirm: z.literal(true).describe("Must be true to remove local plugin config and local-keychain secrets.")
 });

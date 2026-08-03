@@ -122,6 +122,16 @@ By default the setup page binds to `127.0.0.1:37891`. If that port is busy, it f
 set IMAP_PLUGIN_SETUP_PORT=37900
 ```
 
+## Uninstall Cleanup
+
+When the plugin is uninstalled, Codex should ask the user whether to remove local IMAP Mailboxes configuration. If the user confirms, call `imap_cleanup_config` with `confirm: true`, or run:
+
+```bash
+imap-plugin cleanup --yes
+```
+
+Cleanup removes saved account profiles, plugin preferences, the installed license file, and local-keychain mailbox secrets. Environment variables and 1Password items cannot be removed safely by the plugin; cleanup reports any referenced names so the user can remove them from their shell, OS profile, or vault.
+
 ## Account Setup
 
 After building, add an account:
@@ -166,6 +176,7 @@ imap-plugin account add personal \
 - `imap_add_account`
 - `imap_list_accounts`
 - `imap_remove_account`
+- `imap_cleanup_config`
 - `imap_subscription_status`
 - `imap_upgrade_subscription`
 - `imap_license_status`

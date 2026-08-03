@@ -27,11 +27,15 @@
         <p class="eyebrow">Privacy</p>
         <h1>Privacy Policy</h1>
       </div>
-      <p>IMAP Mailboxes is designed around local-first mailbox access.</p>
+      <p>IMAP Mailboxes is designed around local-first mailbox access for Codex.</p>
+      <h2>Current platform scope</h2>
+      <p>IMAP Mailboxes is currently a Codex-exclusive plugin. It is not currently offered as a general ChatGPT GPT, Claude integration, hosted mailbox service, or shared remote MCP service.</p>
+      <p>Support for other assistant platforms, including Claude, may be considered later if technically and commercially appropriate, but it is not part of the current roadmap.</p>
       <h2>Mailbox credentials</h2>
-      <p>V1 stores mailbox passwords in the operating system credential store, such as Windows Credential Manager or macOS Keychain. Account profile files do not store raw passwords.</p>
+      <p>V1 stores mailbox passwords safely in the local operating system keychain. On Windows, this means Windows Credential Manager. On macOS, this means macOS Keychain. Account profile files do not store raw passwords.</p>
+      <p>The plugin keeps credential storage on the user's computer through the local keychain provider. Environment-variable and 1Password-backed accounts can be configured for development or advanced workflows, but the default setup page uses local keychain storage.</p>
       <h2>Email content</h2>
-      <p>The plugin reads mailbox content only when you ask Codex to use a configured account. The plugin should not log mailbox passwords or message bodies.</p>
+      <p>The plugin reads mailbox content only when you ask Codex to use a configured account. The plugin does not log mailbox passwords or message bodies.</p>
       <h2>Hosted services</h2>
       <p>The current plugin does not operate a hosted mailbox sync service. If hosted features are added later, this policy will be updated before those features are released.</p>
       <h2>Contact</h2>

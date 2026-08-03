@@ -49,6 +49,31 @@ export interface SearchAndReadOptions extends SearchOptions {
   includeText?: boolean;
 }
 
+export interface MessageUidActionOptions {
+  mailbox: string;
+  uids: number[];
+}
+
+export interface MessageFlagOptions extends MessageUidActionOptions {
+  mode: "add" | "remove" | "set";
+  flags: string[];
+}
+
+export interface MessageColorOptions extends MessageUidActionOptions {
+  color: "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "grey";
+}
+
+export interface MoveMessagesOptions extends MessageUidActionOptions {
+  destination: string;
+}
+
+export interface AppendMessageOptions {
+  mailbox: string;
+  raw: string;
+  flags?: string[];
+  internalDate?: string;
+}
+
 async function withClient<T>(
   account: AccountProfile,
   callback: (client: ImapFlow) => Promise<T>,
@@ -118,8 +143,8 @@ export async function listFolders(account: AccountProfile) {
   });
 }
 
-export async function searchMessages(account: AccountProfile, options: SearchOptions): Promise<MessageSummary[]> {
-  return withClient(account, async (client) => searchMessagesWithClient(client, options));
+export async function searchMessages(account: AccountProfile, options: SearchOptions, overridePassword?: string): Promise<MessageSummary[]> {
+  return withClient(account, async (client) => searchMessagesWithClient(client, options), overridePassword);
 }
 
 async function searchMessagesWithClient(client: ImapFlow, options: SearchOptions): Promise<MessageSummary[]> {
@@ -314,6 +339,13 @@ async function parseFetchedMessage(
     to: addressesToStrings(parsed.to),
     cc: addressesToStrings(parsed.cc),
     bcc: addressesToStrings(parsed.bcc),
+    messageId: parsed.messageId ?? null,
+    inReplyTo: parsed.inReplyTo ?? null,
+    references: Array.isArray(parsed.references)
+      ? parsed.references
+      : parsed.references
+        ? [parsed.references]
+        : [],
     date: parsed.date?.toISOString() ?? null,
     flags,
     seen: flags.includes("\\Seen"),
@@ -405,4 +437,108 @@ export async function searchAndReadMessages(account: AccountProfile, options: Se
       return messages;
     });
   });
+}
+
+export async function updateMessageFlags(account: AccountProfile, options: MessageFlagOptions): Promise<{ ok: boolean }> {
+  return withClient(account, async (client) =>
+    withMailbox(client, options.mailbox, async () => {
+      const flags = normalizeFlags(options.flags);
+      const ok = options.mode === "set"
+        ? await client.messageFlagsSet(options.uids, flags, { uid: true })
+        : options.mode === "remove"
+          ? await client.messageFlagsRemove(options.uids, flags, { uid: true })
+          : await client.messageFlagsAdd(options.uids, flags, { uid: true });
+
+      return { ok };
+    })
+  );
+}
+
+export async function setMessageColor(account: AccountProfile, options: MessageColorOptions): Promise<{ ok: boolean }> {
+  return withClient(account, async (client) =>
+    withMailbox(client, options.mailbox, async () => ({
+      ok: await client.setFlagColor(options.uids, options.color, { uid: true })
+    }))
+  );
+}
+
+export async function copyMessages(account: AccountProfile, options: MoveMessagesOptions) {
+  return withClient(account, async (client) =>
+    withMailbox(client, options.mailbox, async () => ({
+      result: await client.messageCopy(options.uids, options.destination, { uid: true })
+    }))
+  );
+}
+
+export async function moveMessages(account: AccountProfile, options: MoveMessagesOptions) {
+  return withClient(account, async (client) =>
+    withMailbox(client, options.mailbox, async () => ({
+      result: await client.messageMove(options.uids, options.destination, { uid: true })
+    }))
+  );
+}
+
+export async function deleteMessages(account: AccountProfile, options: MessageUidActionOptions): Promise<{ ok: boolean }> {
+  return withClient(account, async (client) =>
+    withMailbox(client, options.mailbox, async () => ({
+      ok: await client.messageDelete(options.uids, { uid: true })
+    }))
+  );
+}
+
+export async function appendMessage(account: AccountProfile, options: AppendMessageOptions) {
+  return withClient(account, async (client) => ({
+    result: await client.append(options.mailbox, Buffer.from(options.raw, "utf8"), normalizeFlags(options.flags ?? []), options.internalDate)
+  }));
+}
+
+export async function createFolder(account: AccountProfile, path: string) {
+  return withClient(account, async (client) => ({
+    result: await client.mailboxCreate(path)
+  }));
+}
+
+export async function renameFolder(account: AccountProfile, path: string, newPath: string) {
+  return withClient(account, async (client) => ({
+    result: await client.mailboxRename(path, newPath)
+  }));
+}
+
+export async function deleteFolder(account: AccountProfile, path: string) {
+  return withClient(account, async (client) => ({
+    result: await client.mailboxDelete(path)
+  }));
+}
+
+export async function subscribeFolder(account: AccountProfile, path: string): Promise<{ ok: boolean }> {
+  return withClient(account, async (client) => ({
+    ok: await client.mailboxSubscribe(path)
+  }));
+}
+
+export async function unsubscribeFolder(account: AccountProfile, path: string): Promise<{ ok: boolean }> {
+  return withClient(account, async (client) => ({
+    ok: await client.mailboxUnsubscribe(path)
+  }));
+}
+
+export async function getQuota(account: AccountProfile, path?: string) {
+  return withClient(account, async (client) => ({
+    quota: await client.getQuota(path)
+  }));
+}
+
+function normalizeFlags(flags: string[]): string[] {
+  return flags
+    .map((flag) => flag.trim())
+    .filter(Boolean)
+    .map((flag) => {
+      const normalized = flag.toLowerCase();
+      if (["seen", "\\seen"].includes(normalized)) return "\\Seen";
+      if (["answered", "\\answered"].includes(normalized)) return "\\Answered";
+      if (["flagged", "\\flagged"].includes(normalized)) return "\\Flagged";
+      if (["deleted", "\\deleted"].includes(normalized)) return "\\Deleted";
+      if (["draft", "\\draft"].includes(normalized)) return "\\Draft";
+      return flag;
+    });
 }

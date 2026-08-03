@@ -4,10 +4,13 @@ import { URL } from "node:url";
 import { lookup, resolveMx, resolveSrv } from "node:dns/promises";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { requireSubscription, subscriptionStatus } from "../billing/subscription.js";
 import { getAccount, readAccounts, removeAccount, upsertAccount } from "./accounts.js";
+import { readPreferences, updatePreferences } from "./preferences.js";
 import { publicAccount } from "./public-account.js";
 import { createCredentialProvider } from "../credentials/index.js";
-import { testAccount } from "../mail/imap-client.js";
+import { searchMessages, testAccount } from "../mail/imap-client.js";
+import { sendMessage, testSmtpConnection } from "../mail/smtp-client.js";
 import { AccountProfile } from "../types.js";
 import { addAccountSchema } from "../tools/schemas.js";
 
@@ -18,7 +21,7 @@ export interface SetupServerInfo {
   token: string;
 }
 
-const SETUP_UI_VERSION = "20260803.1320";
+const SETUP_UI_VERSION = "20260803.1745";
 
 let setupServerPromise: Promise<SetupServerInfo> | undefined;
 
@@ -534,12 +537,23 @@ function accountFromInput(input: ReturnType<typeof addAccountSchema.parse>): Acc
     secure: input.secure,
     username: input.username,
     credentialProvider: input.credentialProvider,
-    credentialRef: input.credentialRef
+    credentialRef: input.credentialRef,
+    smtpHost: input.smtpHost,
+    smtpPort: input.smtpPort,
+    smtpSecure: input.smtpSecure,
+    smtpUsername: input.smtpUsername
   };
 }
 
 async function saveAccount(rawInput: unknown): Promise<AccountProfile> {
   const input = addAccountSchema.parse(rawInput);
+  if (hasSmtpOverrides(input)) {
+    const required = await requireSubscription("mail_actions", "SMTP configuration");
+    if (required) {
+      throw new Error(required.message);
+    }
+  }
+
   const account = accountFromInput(input);
   const existing = (await readAccounts()).find((entry) => entry.id === account.id);
 
@@ -559,11 +573,118 @@ async function testInputAccount(rawInput: unknown) {
   const input = addAccountSchema.parse(rawInput);
   const account = accountFromInput(input);
   const overridePassword = account.credentialProvider === "local-keychain" ? input.password : undefined;
+  const paid = (await subscriptionStatus("mail_actions")).live;
   try {
-    return await testAccount(account, overridePassword);
+    return {
+      imap: await testAccount(account, overridePassword),
+      smtp: paid
+        ? await testSmtpConnection(account, {
+          smtpHost: input.smtpHost,
+          smtpPort: input.smtpPort,
+          smtpSecure: input.smtpSecure,
+          smtpUsername: input.smtpUsername,
+          overridePassword
+        })
+        : undefined
+    };
   } catch (error) {
     throw withAccountContext(error, account);
   }
+}
+
+async function testSavedAccount(account: AccountProfile) {
+  const paid = (await subscriptionStatus("mail_actions")).live;
+  try {
+    return {
+      imap: await testAccount(account),
+      smtp: paid ? await testSmtpConnection(account) : undefined
+    };
+  } catch (error) {
+    throw withAccountContext(error, account);
+  }
+}
+
+function hasSmtpOverrides(input: ReturnType<typeof addAccountSchema.parse>): boolean {
+  return Boolean(input.smtpHost || input.smtpPort || input.smtpSecure || input.smtpUsername);
+}
+
+async function roundTripAccount(account: AccountProfile, overridePassword?: string) {
+  const subject = `IMAP Plugin round-trip ${randomBytes(8).toString("hex")}`;
+  await testAccount(account, overridePassword);
+  await sendMessage(account, {
+    to: [account.username],
+    subject,
+    text: `This is an IMAP Plugin round-trip test sent at ${new Date().toISOString()}.`,
+    overridePassword
+  });
+
+  for (let attempt = 1; attempt <= 6; attempt += 1) {
+    await delay(attempt === 1 ? 2500 : 5000);
+    const messages = await searchMessages(account, {
+      mailbox: "INBOX",
+      subject,
+      limit: 5
+    }, overridePassword);
+
+    if (messages.length) {
+      return {
+        ok: true,
+        subject,
+        found: true,
+        attempts: attempt,
+        messages
+      };
+    }
+  }
+
+  return {
+    ok: false,
+    subject,
+    found: false,
+    attempts: 6,
+    message: "The test email was sent, but it was not found in INBOX yet."
+  };
+}
+
+async function roundTripInputAccount(rawInput: unknown) {
+  const required = await requireSubscription("mail_actions", "SMTP round-trip test");
+  if (required) {
+    return required;
+  }
+  await requireSmtpActionsEnabled();
+
+  const input = addAccountSchema.parse(rawInput);
+  const account = accountFromInput(input);
+  const overridePassword = account.credentialProvider === "local-keychain" ? input.password : undefined;
+  try {
+    return await roundTripAccount(account, overridePassword);
+  } catch (error) {
+    throw withAccountContext(error, account);
+  }
+}
+
+async function roundTripSavedAccount(account: AccountProfile) {
+  const required = await requireSubscription("mail_actions", "SMTP round-trip test");
+  if (required) {
+    return required;
+  }
+  await requireSmtpActionsEnabled();
+
+  try {
+    return await roundTripAccount(account);
+  } catch (error) {
+    throw withAccountContext(error, account);
+  }
+}
+
+async function requireSmtpActionsEnabled(): Promise<void> {
+  if (!(await readPreferences()).smtpActionsEnabled) {
+    throw new Error("SMTP sending is disabled in plugin settings.");
+  }
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function isAuthorized(request: IncomingMessage, url: URL, token: string): boolean {
@@ -609,6 +730,30 @@ async function handleRequest(
       return;
     }
 
+    if (url.pathname === "/api/subscription" && request.method === "GET") {
+      sendJson(response, 200, {
+        subscription: await subscriptionStatus("mail_actions"),
+        preferences: await readPreferences()
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/preferences" && request.method === "POST") {
+      const required = await requireSubscription("mail_actions", "SMTP action preferences");
+      if (required) {
+        sendJson(response, 402, required);
+        return;
+      }
+
+      const body = await readJson(request) as Partial<ReturnType<typeof readPreferences>>;
+      sendJson(response, 200, {
+        preferences: await updatePreferences({
+          smtpActionsEnabled: Boolean((body as { smtpActionsEnabled?: unknown }).smtpActionsEnabled)
+        })
+      });
+      return;
+    }
+
     if (url.pathname === "/api/accounts" && request.method === "POST") {
       const account = await saveAccount(await readJson(request));
       sendJson(response, 200, { account: publicAccount(account) });
@@ -617,6 +762,12 @@ async function handleRequest(
 
     if (url.pathname === "/api/test" && request.method === "POST") {
       sendJson(response, 200, await testInputAccount(await readJson(request)));
+      return;
+    }
+
+    if (url.pathname === "/api/round-trip" && request.method === "POST") {
+      const result = await roundTripInputAccount(await readJson(request));
+      sendJson(response, "ok" in result && result.ok === false && "code" in result ? 402 : 200, result);
       return;
     }
 
@@ -637,11 +788,14 @@ async function handleRequest(
     const testMatch = url.pathname.match(/^\/api\/accounts\/([^/]+)\/test$/);
     if (testMatch && request.method === "POST") {
       const account = await getAccount(decodeURIComponent(testMatch[1]));
-      try {
-        sendJson(response, 200, await testAccount(account));
-      } catch (error) {
-        throw withAccountContext(error, account);
-      }
+      sendJson(response, 200, await testSavedAccount(account));
+      return;
+    }
+
+    const roundTripMatch = url.pathname.match(/^\/api\/accounts\/([^/]+)\/round-trip$/);
+    if (roundTripMatch && request.method === "POST") {
+      const result = await roundTripSavedAccount(await getAccount(decodeURIComponent(roundTripMatch[1])));
+      sendJson(response, "ok" in result && result.ok === false && "code" in result ? 402 : 200, result);
       return;
     }
 
@@ -1034,6 +1188,21 @@ function renderSetupPage(token: string): string {
       display: none;
     }
 
+    body:not(.paid) .paid-only {
+      display: none !important;
+    }
+
+    .switch-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fbfcfc;
+    }
+
     button {
       min-height: 40px;
       border: 1px solid var(--line);
@@ -1180,6 +1349,16 @@ function renderSetupPage(token: string): string {
     <div class="layout">
       <section>
         <h2>Connection</h2>
+        <div class="switch-row paid-only">
+          <div>
+            <strong>SMTP sending</strong>
+            <div class="help-text">Allow paid tools to send, reply, and run round-trip email tests.</div>
+          </div>
+          <label class="inline">
+            <input id="smtpActionsEnabled" type="checkbox">
+            Enabled
+          </label>
+        </div>
         <form id="account-form">
           <label class="span-2">Email address
             <input id="email" name="email" type="email" autocomplete="email" required placeholder="me@example.com">
@@ -1203,6 +1382,23 @@ function renderSetupPage(token: string): string {
           <label class="inline">
             <input id="secure" name="secure" type="checkbox" checked>
             Use TLS
+          </label>
+          <div class="span-2 paid-only">
+            <h2>SMTP Actions</h2>
+            <div class="help-text">Optional. Leave blank to derive SMTP settings from the IMAP account and reuse the same saved password.</div>
+          </div>
+          <label class="paid-only">SMTP Host
+            <input id="smtpHost" name="smtpHost" placeholder="smtp.example.com">
+          </label>
+          <label class="paid-only">SMTP Port
+            <input id="smtpPort" name="smtpPort" type="number" min="1" max="65535" placeholder="587">
+          </label>
+          <label class="paid-only">SMTP Username
+            <input id="smtpUsername" name="smtpUsername" autocomplete="username" placeholder="same as IMAP username">
+          </label>
+          <label class="inline paid-only">
+            <input id="smtpSecure" name="smtpSecure" type="checkbox">
+            SMTP implicit TLS
           </label>
           <div class="credential-card span-2">
             <div class="credential-topline">
@@ -1228,6 +1424,7 @@ function renderSetupPage(token: string): string {
           <div class="actions span-2">
             <button class="primary" type="submit">Save account</button>
             <button type="button" id="test-current">Test connection</button>
+            <button class="paid-only" type="button" id="round-trip-current">Round-trip test</button>
             <button type="reset">Clear</button>
           </div>
         </form>
@@ -1279,6 +1476,8 @@ function renderSetupPage(token: string): string {
     const testModal = document.querySelector("#test-modal");
     const testModalForm = document.querySelector("#test-modal-form");
     const modalMessage = document.querySelector("#modal-message");
+    let paidActions = false;
+    let smtpActionsEnabled = false;
     let pendingCandidate = null;
     let pendingEmail = "";
 
@@ -1397,6 +1596,10 @@ function renderSetupPage(token: string): string {
       document.querySelector("#host").value = candidate.host;
       document.querySelector("#port").value = candidate.port;
       document.querySelector("#secure").checked = candidate.secure;
+      document.querySelector("#smtpHost").value = candidate.host.replace(/^imap\\./i, "smtp.");
+      document.querySelector("#smtpPort").value = "587";
+      document.querySelector("#smtpUsername").value = username || candidate.username || email;
+      document.querySelector("#smtpSecure").checked = false;
       document.querySelector("#password").value = password || "";
       form.classList.add("verified");
       setMessage("Connection succeeded for " + candidate.provider + ". Save the account to keep these settings.", "ok");
@@ -1478,7 +1681,7 @@ function renderSetupPage(token: string): string {
 
     function formPayload() {
       const email = document.querySelector("#email").value.trim();
-      return {
+      const payload = {
         accountId: document.querySelector("#accountId").value.trim() || accountIdFromEmail(email),
         host: document.querySelector("#host").value.trim(),
         port: Number(document.querySelector("#port").value),
@@ -1487,6 +1690,13 @@ function renderSetupPage(token: string): string {
         credentialProvider: "local-keychain",
         password: document.querySelector("#password").value || undefined
       };
+      if (paidActions) {
+        payload.smtpHost = document.querySelector("#smtpHost").value.trim() || undefined;
+        payload.smtpPort = document.querySelector("#smtpPort").value ? Number(document.querySelector("#smtpPort").value) : undefined;
+        payload.smtpSecure = document.querySelector("#smtpSecure").checked;
+        payload.smtpUsername = document.querySelector("#smtpUsername").value.trim() || undefined;
+      }
+      return payload;
     }
 
     async function api(path, options = {}) {
@@ -1522,18 +1732,30 @@ function renderSetupPage(token: string): string {
           <small></small>
           <div class="account-actions">
             <button type="button" data-action="test">Test</button>
+            <button class="paid-only" type="button" data-action="round-trip">Round-trip</button>
             <button type="button" data-action="edit">Edit</button>
             <button type="button" data-action="remove">Remove</button>
           </div>
         \`;
         item.querySelector("strong").textContent = account.id;
         item.querySelector(".pill").textContent = "Local keychain";
-        item.querySelector("small").textContent = account.username + " at " + account.host + ":" + account.port;
+        item.querySelector("small").textContent = account.username + " at " + account.host + ":" + account.port
+          + (account.smtpHost ? " / SMTP " + account.smtpHost + ":" + (account.smtpPort || 587) : "");
         item.querySelector('[data-action="test"]').addEventListener("click", async () => {
           setMessage("Testing " + account.id + "...");
           try {
             await api("/api/accounts/" + encodeURIComponent(account.id) + "/test", { method: "POST" });
             setMessage("Connection succeeded for " + account.id + ".", "ok");
+          } catch (error) {
+            const failure = formatClientFailure(error);
+            setMessage(failure.error, "warn", diagnosticDetails(error.diagnostic || failure.diagnostic));
+          }
+        });
+        item.querySelector('[data-action="round-trip"]').addEventListener("click", async () => {
+          setMessage("Running round-trip test for " + account.id + "...");
+          try {
+        const result = await api("/api/accounts/" + encodeURIComponent(account.id) + "/round-trip", { method: "POST" });
+            setMessage(result.found ? "Round-trip succeeded for " + account.id + "." : result.message, result.found ? "ok" : "warn");
           } catch (error) {
             const failure = formatClientFailure(error);
             setMessage(failure.error, "warn", diagnosticDetails(error.diagnostic || failure.diagnostic));
@@ -1547,6 +1769,10 @@ function renderSetupPage(token: string): string {
           document.querySelector("#host").value = account.host;
           document.querySelector("#port").value = account.port;
           document.querySelector("#secure").checked = account.secure;
+          document.querySelector("#smtpHost").value = account.smtpHost || "";
+          document.querySelector("#smtpPort").value = account.smtpPort || "";
+          document.querySelector("#smtpSecure").checked = Boolean(account.smtpSecure);
+          document.querySelector("#smtpUsername").value = account.smtpUsername || "";
           document.querySelector("#password").value = "";
           setMessage("Loaded " + account.id + " for editing.");
         });
@@ -1642,12 +1868,39 @@ function renderSetupPage(token: string): string {
         setMessage(failure.error, "warn", diagnosticDetails(error.diagnostic || failure.diagnostic));
       }
     });
+    document.querySelector("#round-trip-current").addEventListener("click", async () => {
+      setMessage("Running round-trip test...");
+      try {
+        const result = await api("/api/round-trip", { method: "POST", body: JSON.stringify(formPayload()) });
+        setMessage(result.found ? "Round-trip succeeded." : result.message, result.found ? "ok" : "warn");
+      } catch (error) {
+        const failure = formatClientFailure(error);
+        setMessage(failure.error, "warn", diagnosticDetails(error.diagnostic || failure.diagnostic));
+      }
+    });
+    document.querySelector("#smtpActionsEnabled").addEventListener("change", async (event) => {
+      const enabled = event.target.checked;
+      setMessage(enabled ? "Enabling SMTP sending..." : "Disabling SMTP sending...");
+      try {
+        const { preferences } = await api("/api/preferences", {
+          method: "POST",
+          body: JSON.stringify({ smtpActionsEnabled: enabled })
+        });
+        smtpActionsEnabled = Boolean(preferences.smtpActionsEnabled);
+        event.target.checked = smtpActionsEnabled;
+        setMessage(smtpActionsEnabled ? "SMTP sending enabled." : "SMTP sending disabled.", "ok");
+      } catch (error) {
+        event.target.checked = smtpActionsEnabled;
+        const failure = formatClientFailure(error);
+        setMessage(failure.error, "warn", diagnosticDetails(error.diagnostic || failure.diagnostic));
+      }
+    });
     form.addEventListener("reset", () => setTimeout(() => {
       clearVerifiedState();
       discoveryEl.textContent = "";
       setMessage("");
     }));
-    for (const selector of ["#email", "#username", "#host", "#port", "#secure", "#password"]) {
+    for (const selector of ["#email", "#username", "#host", "#port", "#secure", "#smtpHost", "#smtpPort", "#smtpSecure", "#smtpUsername", "#password"]) {
       document.querySelector(selector).addEventListener("input", clearVerifiedState);
       document.querySelector(selector).addEventListener("change", clearVerifiedState);
     }
@@ -1657,10 +1910,23 @@ function renderSetupPage(token: string): string {
       window.location.replace(url.toString());
     });
 
-    loadAccounts().catch((error) => {
+    async function loadSubscription() {
+      const { subscription, preferences } = await api("/api/subscription");
+      paidActions = Boolean(subscription.live);
+      smtpActionsEnabled = Boolean(preferences && preferences.smtpActionsEnabled);
+      document.body.classList.toggle("paid", paidActions);
+      document.querySelector("#smtpActionsEnabled").checked = smtpActionsEnabled;
+    }
+
+    loadSubscription()
+      .catch(() => {
+        paidActions = false;
+        document.body.classList.remove("paid");
+      })
+      .finally(() => loadAccounts().catch((error) => {
       const failure = formatClientFailure(error);
       setMessage(failure.error, "warn", diagnosticDetails(error.diagnostic || failure.diagnostic));
-    });
+    }));
   </script>
 </body>
 </html>`;
