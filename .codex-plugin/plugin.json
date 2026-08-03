@@ -1,6 +1,6 @@
 {
   "name": "imap-plugin",
-  "version": "0.1.0",
+  "version": "0.1.0+codex.20260803103601",
   "description": "Connect Codex to generic IMAP mailboxes with safe read-only mailbox tools.",
   "author": {
     "name": "Paulo Santos"
@@ -27,6 +27,9 @@
       "Find recent unread email.",
       "Read this mailbox thread."
     ],
-    "brandColor": "#256D85"
+    "brandColor": "#256D85",
+    "composerIcon": "./assets/icon.svg",
+    "logo": "./assets/icon.svg",
+    "logoDark": "./assets/icon.svg"
   }
 }
