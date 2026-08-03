@@ -2,10 +2,21 @@ import { AccountProfile, MailboxCredential } from "../types.js";
 import { CredentialProvider } from "./provider.js";
 
 const SERVICE = "imap-plugin";
+type KeytarModule = {
+  getPassword(service: string, account: string): Promise<string | null>;
+  setPassword(service: string, account: string, password: string): Promise<void>;
+  deletePassword(service: string, account: string): Promise<boolean>;
+};
 
-async function loadKeytar() {
+async function loadKeytar(): Promise<KeytarModule> {
   try {
-    return await import("keytar");
+    const imported = await import("keytar") as unknown as Record<string, unknown>;
+    const keytar = typeof imported.setPassword === "function" ? imported : imported.default;
+    if (!keytar || typeof (keytar as Partial<KeytarModule>).setPassword !== "function") {
+      throw new Error("Unsupported keytar module shape.");
+    }
+
+    return keytar as KeytarModule;
   } catch {
     throw new Error("The local-keychain provider requires the keytar package and OS credential store support.");
   }

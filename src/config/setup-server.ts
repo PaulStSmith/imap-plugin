@@ -1,6 +1,7 @@
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { randomBytes } from "node:crypto";
 import { URL } from "node:url";
+import { lookup, resolveMx, resolveSrv } from "node:dns/promises";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { getAccount, readAccounts, removeAccount, upsertAccount } from "./accounts.js";
@@ -17,9 +18,34 @@ export interface SetupServerInfo {
   token: string;
 }
 
-const SETUP_UI_VERSION = "20260803.1115";
+const SETUP_UI_VERSION = "20260803.1320";
 
 let setupServerPromise: Promise<SetupServerInfo> | undefined;
+
+interface DiscoveryInput {
+  email: string;
+}
+
+interface DiscoveryCandidate {
+  provider: string;
+  host: string;
+  port: number;
+  secure: boolean;
+  source: string;
+  confidence: number;
+  username: string;
+  note?: string;
+  resolves?: boolean;
+}
+
+interface DiscoveryResult {
+  email: string;
+  domain: string;
+  provider: string | null;
+  candidates: DiscoveryCandidate[];
+  mx: Array<{ exchange: string; priority: number }>;
+  warnings: string[];
+}
 
 function sendJson(response: ServerResponse, status: number, value: unknown): void {
   response.writeHead(status, {
@@ -27,6 +53,438 @@ function sendJson(response: ServerResponse, status: number, value: unknown): voi
     "cache-control": "no-store"
   });
   response.end(JSON.stringify(value, null, 2));
+}
+
+function stringProperty(value: unknown, key: string): string | undefined {
+  if (!value || typeof value !== "object" || !(key in value)) {
+    return undefined;
+  }
+
+  const property = (value as Record<string, unknown>)[key];
+  return typeof property === "string" && property.trim() ? property : undefined;
+}
+
+function booleanProperty(value: unknown, key: string): boolean {
+  return Boolean(value && typeof value === "object" && (value as Record<string, unknown>)[key]);
+}
+
+function diagnosticMessage(category: string, message: string): string {
+  if (category === "authentication") {
+    return "Authentication failed. Check the username and password or use an app password if your provider requires one.";
+  }
+
+  if (category === "dns") {
+    return "The IMAP host could not be resolved. Check the server hostname.";
+  }
+
+  if (category === "refused") {
+    return "The IMAP server refused the connection. Check the host, port, and TLS setting.";
+  }
+
+  if (category === "timeout") {
+    return "The IMAP connection timed out. Check the host, port, network, or firewall.";
+  }
+
+  if (category === "tls") {
+    return "TLS failed. Check whether this server expects TLS on this port.";
+  }
+
+  if (category === "credential") {
+    return message;
+  }
+
+  if (category === "validation") {
+    return message;
+  }
+
+  return message || "Command failed.";
+}
+
+function diagnosticCategory(error: unknown): string {
+  const code = stringProperty(error, "code");
+  const name = stringProperty(error, "name");
+  const message = error instanceof Error ? error.message : String(error || "");
+  const normalized = [code, name, message, stringProperty(error, "response")].filter(Boolean).join(" ").toLowerCase();
+
+  if (booleanProperty(error, "authenticationFailed") || /authentication|auth|invalid credentials|login failed/.test(normalized)) {
+    return "authentication";
+  }
+
+  if (code === "ENOTFOUND" || code === "EAI_AGAIN") {
+    return "dns";
+  }
+
+  if (code === "ECONNREFUSED") {
+    return "refused";
+  }
+
+  if (code === "ETIMEDOUT" || code === "CONNECT_TIMEOUT" || /timed out|timeout/.test(normalized)) {
+    return "timeout";
+  }
+
+  if (/tls|ssl|certificate|self-signed|hostname\/ip does not match/.test(normalized)) {
+    return "tls";
+  }
+
+  if (/keychain|credential store|password found|password is required/.test(normalized)) {
+    return "credential";
+  }
+
+  if (/valid json|invalid setup token|zod|required|expected/.test(normalized)) {
+    return "validation";
+  }
+
+  return "unknown";
+}
+
+function diagnosticSuggestions(category: string): string[] {
+  if (category === "authentication") {
+    return [
+      "Verify the full mailbox username.",
+      "Use an app password if two-factor authentication is enabled.",
+      "Confirm IMAP access is enabled for the account."
+    ];
+  }
+
+  if (category === "dns") {
+    return ["Check for a typo in the IMAP host.", "Use the provider's IMAP server name, not the webmail URL."];
+  }
+
+  if (category === "refused") {
+    return ["Try port 993 with TLS on, or port 143 with TLS off.", "Confirm the provider allows IMAP connections."];
+  }
+
+  if (category === "timeout") {
+    return ["Check VPN, firewall, and network restrictions.", "Confirm the host and port are reachable from this computer."];
+  }
+
+  if (category === "tls") {
+    return ["For port 993, keep TLS on.", "For port 143, try TLS off if the provider documents STARTTLS/plain IMAP."];
+  }
+
+  if (category === "credential") {
+    return ["Enter the password again, then save or test.", "Check that the OS credential store is available."];
+  }
+
+  return [];
+}
+
+function publicError(error: unknown) {
+  const category = diagnosticCategory(error);
+  const message = error instanceof Error ? error.message : String(error || "Unknown error.");
+  const context = error && typeof error === "object"
+    ? (error as { imapAccountContext?: ReturnType<typeof publicAccount> }).imapAccountContext
+    : undefined;
+
+  return {
+    error: diagnosticMessage(category, message),
+    diagnostic: {
+      category,
+      originalMessage: message,
+      code: stringProperty(error, "code"),
+      name: stringProperty(error, "name"),
+      response: stringProperty(error, "response"),
+      responseStatus: stringProperty(error, "responseStatus"),
+      account: context,
+      suggestions: diagnosticSuggestions(category)
+    }
+  };
+}
+
+function withAccountContext(error: unknown, account: AccountProfile): Error {
+  const normalized = error instanceof Error ? error : new Error(String(error || "Unknown error."));
+  (normalized as { imapAccountContext?: ReturnType<typeof publicAccount> }).imapAccountContext = publicAccount(account);
+  return normalized;
+}
+
+function parseEmailAddress(value: unknown): { email: string; localPart: string; domain: string } {
+  if (!value || typeof value !== "object") {
+    throw new Error("Email address is required.");
+  }
+
+  const email = String((value as DiscoveryInput).email ?? "").trim().toLowerCase();
+  const match = email.match(/^([^@\s]+)@([^@\s]+\.[^@\s]+)$/);
+  if (!match) {
+    throw new Error("Enter a valid email address before detecting settings.");
+  }
+
+  return {
+    email,
+    localPart: match[1],
+    domain: match[2]
+  };
+}
+
+function addCandidate(candidates: DiscoveryCandidate[], candidate: DiscoveryCandidate): void {
+  const key = `${candidate.host.toLowerCase()}:${candidate.port}:${candidate.secure}`;
+  const existing = candidates.find((entry) => `${entry.host.toLowerCase()}:${entry.port}:${entry.secure}` === key);
+  if (!existing) {
+    candidates.push(candidate);
+    return;
+  }
+
+  if (candidate.confidence > existing.confidence) {
+    Object.assign(existing, candidate);
+  }
+}
+
+function hostnameFromXml(block: string, tag: string): string | undefined {
+  const match = block.match(new RegExp(`<${tag}>\\s*([^<]+?)\\s*</${tag}>`, "i"));
+  return match?.[1]?.trim();
+}
+
+function usernameFromTemplate(template: string | undefined, email: string, localPart: string): string {
+  if (!template) {
+    return email;
+  }
+
+  return template
+    .replace(/%EMAILADDRESS%/gi, email)
+    .replace(/%EMAILLOCALPART%/gi, localPart);
+}
+
+async function fetchAutoconfig(url: string): Promise<string | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3500);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) {
+      return null;
+    }
+
+    const text = await response.text();
+    return text.includes("<clientConfig") ? text : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function addAutoconfigCandidates(
+  candidates: DiscoveryCandidate[],
+  xml: string,
+  email: string,
+  localPart: string
+): void {
+  const blocks = xml.match(/<incomingServer\b[\s\S]*?<\/incomingServer>/gi) ?? [];
+  for (const block of blocks) {
+    if (!/type=["']imap["']/i.test(block)) {
+      continue;
+    }
+
+    const host = hostnameFromXml(block, "hostname");
+    const port = Number(hostnameFromXml(block, "port") ?? "993");
+    if (!host || !Number.isInteger(port)) {
+      continue;
+    }
+
+    const socketType = (hostnameFromXml(block, "socketType") ?? "").toUpperCase();
+    addCandidate(candidates, {
+      provider: "Autoconfig",
+      host,
+      port,
+      secure: socketType !== "STARTTLS" && port === 993,
+      source: "autoconfig",
+      confidence: 0.95,
+      username: usernameFromTemplate(hostnameFromXml(block, "username"), email, localPart),
+      note: "Discovered from the domain's email client autoconfig file."
+    });
+  }
+}
+
+function addProviderCandidates(
+  candidates: DiscoveryCandidate[],
+  mxHosts: string[],
+  email: string,
+  localPart: string,
+  domain: string,
+  warnings: string[]
+): string | null {
+  const joined = mxHosts.join(" ");
+  if (/google\.com|googlemail\.com|aspmx\.l\.google/i.test(joined)) {
+    addCandidate(candidates, {
+      provider: "Google Workspace or Gmail",
+      host: "imap.gmail.com",
+      port: 993,
+      secure: true,
+      source: "mx",
+      confidence: 0.88,
+      username: email,
+      note: "MX records point to Google mail hosting."
+    });
+    return "Google Workspace or Gmail";
+  }
+
+  if (/outlook\.com|protection\.outlook\.com|mail\.protection\.outlook\.com|microsoft/i.test(joined)) {
+    addCandidate(candidates, {
+      provider: "Microsoft 365 or Outlook",
+      host: "outlook.office365.com",
+      port: 993,
+      secure: true,
+      source: "mx",
+      confidence: 0.86,
+      username: email,
+      note: "MX records point to Microsoft mail hosting. IMAP may need to be enabled by the tenant admin."
+    });
+    return "Microsoft 365 or Outlook";
+  }
+
+  if (/zoho/i.test(joined)) {
+    addCandidate(candidates, {
+      provider: "Zoho Mail",
+      host: "imappro.zoho.com",
+      port: 993,
+      secure: true,
+      source: "mx",
+      confidence: 0.82,
+      username: email,
+      note: "MX records point to Zoho mail hosting."
+    });
+    return "Zoho Mail";
+  }
+
+  if (/yahoodns\.net|yahoo/i.test(joined)) {
+    addCandidate(candidates, {
+      provider: "Yahoo Mail",
+      host: "imap.mail.yahoo.com",
+      port: 993,
+      secure: true,
+      source: "mx",
+      confidence: 0.8,
+      username: email,
+      note: "MX records point to Yahoo mail hosting."
+    });
+    return "Yahoo Mail";
+  }
+
+  if (/icloud|me\.com|mac\.com|apple/i.test(joined)) {
+    addCandidate(candidates, {
+      provider: "iCloud Mail",
+      host: "imap.mail.me.com",
+      port: 993,
+      secure: true,
+      source: "mx",
+      confidence: 0.8,
+      username: email,
+      note: "MX records point to Apple mail hosting."
+    });
+    return "iCloud Mail";
+  }
+
+  if (/protonmail|proton\.ch/i.test(joined)) {
+    warnings.push("MX records point to Proton Mail. Proton generally requires Proton Mail Bridge for IMAP.");
+    return "Proton Mail";
+  }
+
+  if (/proofpoint|mimecast|barracuda|messagelabs|iphmx|ppe-hosted/i.test(joined)) {
+    warnings.push("MX records point to a mail security gateway, so they may not reveal the IMAP server.");
+  }
+
+  addCandidate(candidates, {
+    provider: "Domain default",
+    host: `imap.${domain}`,
+    port: 993,
+    secure: true,
+    source: "guess",
+    confidence: 0.35,
+    username: email,
+    note: "Common IMAP hostname pattern for custom domains."
+  });
+  addCandidate(candidates, {
+    provider: "Domain default",
+    host: `mail.${domain}`,
+    port: 993,
+    secure: true,
+    source: "guess",
+    confidence: 0.3,
+    username: email,
+    note: "Common mail hostname pattern for custom domains."
+  });
+  addCandidate(candidates, {
+    provider: "Domain default",
+    host: domain,
+    port: 993,
+    secure: true,
+    source: "guess",
+    confidence: 0.22,
+    username: email,
+    note: "Fallback guess using the bare email domain."
+  });
+
+  return null;
+}
+
+async function markResolvable(candidate: DiscoveryCandidate): Promise<DiscoveryCandidate> {
+  try {
+    await lookup(candidate.host);
+    return { ...candidate, resolves: true };
+  } catch {
+    return { ...candidate, resolves: false };
+  }
+}
+
+async function discoverMailboxSettings(rawInput: unknown): Promise<DiscoveryResult> {
+  const { email, localPart, domain } = parseEmailAddress(rawInput);
+  const warnings: string[] = [];
+  const candidates: DiscoveryCandidate[] = [];
+
+  const [mxResult, imapsSrvResult, imapSrvResult, autoconfigResult, wellKnownAutoconfigResult] = await Promise.allSettled([
+    resolveMx(domain),
+    resolveSrv(`_imaps._tcp.${domain}`),
+    resolveSrv(`_imap._tcp.${domain}`),
+    fetchAutoconfig(`https://autoconfig.${domain}/mail/config-v1.1.xml?emailaddress=${encodeURIComponent(email)}`),
+    fetchAutoconfig(`https://${domain}/.well-known/autoconfig/mail/config-v1.1.xml?emailaddress=${encodeURIComponent(email)}`)
+  ]);
+
+  const mx = mxResult.status === "fulfilled"
+    ? mxResult.value.sort((a, b) => a.priority - b.priority)
+    : [];
+
+  if (mxResult.status === "rejected") {
+    warnings.push("Could not read MX records for this domain.");
+  }
+
+  for (const result of [imapsSrvResult, imapSrvResult]) {
+    if (result.status !== "fulfilled") {
+      continue;
+    }
+
+    for (const srv of result.value) {
+      if (!srv.name || srv.port < 1 || srv.port > 65535) {
+        continue;
+      }
+
+      addCandidate(candidates, {
+        provider: "DNS SRV",
+        host: srv.name,
+        port: srv.port,
+        secure: srv.port === 993,
+        source: "srv",
+        confidence: 0.9,
+        username: email,
+        note: "Discovered from DNS SRV records."
+      });
+    }
+  }
+
+  for (const result of [autoconfigResult, wellKnownAutoconfigResult]) {
+    if (result.status === "fulfilled" && result.value) {
+      addAutoconfigCandidates(candidates, result.value, email, localPart);
+    }
+  }
+
+  const provider = addProviderCandidates(candidates, mx.map((entry) => entry.exchange.toLowerCase()), email, localPart, domain, warnings);
+  const resolvedCandidates = await Promise.all(candidates.map(markResolvable));
+
+  return {
+    email,
+    domain,
+    provider,
+    candidates: resolvedCandidates.sort((a, b) => Number(b.resolves) - Number(a.resolves) || b.confidence - a.confidence),
+    mx,
+    warnings
+  };
 }
 
 function sendHtml(response: ServerResponse, html: string): void {
@@ -101,7 +559,11 @@ async function testInputAccount(rawInput: unknown) {
   const input = addAccountSchema.parse(rawInput);
   const account = accountFromInput(input);
   const overridePassword = account.credentialProvider === "local-keychain" ? input.password : undefined;
-  return testAccount(account, overridePassword);
+  try {
+    return await testAccount(account, overridePassword);
+  } catch (error) {
+    throw withAccountContext(error, account);
+  }
 }
 
 function isAuthorized(request: IncomingMessage, url: URL, token: string): boolean {
@@ -158,6 +620,11 @@ async function handleRequest(
       return;
     }
 
+    if (url.pathname === "/api/discover" && request.method === "POST") {
+      sendJson(response, 200, await discoverMailboxSettings(await readJson(request)));
+      return;
+    }
+
     const removeMatch = url.pathname.match(/^\/api\/accounts\/([^/]+)$/);
     if (removeMatch && request.method === "DELETE") {
       const accountId = decodeURIComponent(removeMatch[1]);
@@ -169,13 +636,18 @@ async function handleRequest(
 
     const testMatch = url.pathname.match(/^\/api\/accounts\/([^/]+)\/test$/);
     if (testMatch && request.method === "POST") {
-      sendJson(response, 200, await testAccount(await getAccount(decodeURIComponent(testMatch[1]))));
+      const account = await getAccount(decodeURIComponent(testMatch[1]));
+      try {
+        sendJson(response, 200, await testAccount(account));
+      } catch (error) {
+        throw withAccountContext(error, account);
+      }
       return;
     }
 
     sendJson(response, 404, { error: "Not found." });
   } catch (error) {
-    sendJson(response, 400, { error: error instanceof Error ? error.message : "Unknown error." });
+    sendJson(response, 400, publicError(error));
   }
 }
 
@@ -468,6 +940,100 @@ function renderSetupPage(token: string): string {
       margin-top: 6px;
     }
 
+    .discovery {
+      display: grid;
+      gap: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fbfcfc;
+    }
+
+    .discovery:empty {
+      display: none;
+    }
+
+    .candidate {
+      display: grid;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #fff;
+    }
+
+    .candidate-topline {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .candidate-meta {
+      color: var(--muted);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: none;
+      place-items: center;
+      padding: 20px;
+      background: rgba(31, 41, 51, 0.48);
+    }
+
+    .modal-backdrop.open {
+      display: grid;
+    }
+
+    .modal {
+      width: min(440px, 100%);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      background: #fff;
+      box-shadow: 0 24px 70px rgba(31, 41, 51, 0.28);
+    }
+
+    .modal form {
+      display: grid;
+      grid-template-columns: 1fr;
+    }
+
+    .modal-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .modal-title h2 {
+      margin-bottom: 4px;
+    }
+
+    .modal-summary {
+      color: var(--muted);
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+
+    .modal-close {
+      width: 34px;
+      min-height: 34px;
+      padding: 0;
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .verified #password-row,
+    .verified #test-current {
+      display: none;
+    }
+
     button {
       min-height: 40px;
       border: 1px solid var(--line);
@@ -548,6 +1114,23 @@ function renderSetupPage(token: string): string {
       overflow-wrap: anywhere;
     }
 
+    .message-details {
+      margin-top: 8px;
+      display: grid;
+      gap: 4px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .message-details div {
+      overflow-wrap: anywhere;
+    }
+
+    .message-details ul {
+      margin: 4px 0 0 18px;
+      padding: 0;
+    }
+
     .message.ok { color: var(--ok); }
     .message.warn { color: var(--warn); }
 
@@ -598,6 +1181,13 @@ function renderSetupPage(token: string): string {
       <section>
         <h2>Connection</h2>
         <form id="account-form">
+          <label class="span-2">Email address
+            <input id="email" name="email" type="email" autocomplete="email" required placeholder="me@example.com">
+          </label>
+          <div class="actions span-2">
+            <button type="button" id="discover-settings">Detect settings</button>
+          </div>
+          <div class="discovery span-2" id="discovery"></div>
           <label>Profile name
             <input id="accountId" name="accountId" autocomplete="off" required pattern="[A-Za-z0-9_-]+" placeholder="personal">
           </label>
@@ -649,6 +1239,31 @@ function renderSetupPage(token: string): string {
         <div class="accounts" id="accounts"></div>
       </section>
     </div>
+
+    <div class="modal-backdrop" id="test-modal" role="dialog" aria-modal="true" aria-labelledby="test-modal-title">
+      <div class="modal">
+        <div class="modal-title">
+          <div>
+            <h2 id="test-modal-title">Test Connection</h2>
+            <div class="modal-summary" id="test-modal-summary"></div>
+          </div>
+          <button class="modal-close" type="button" id="close-test-modal" aria-label="Close">x</button>
+        </div>
+        <form id="test-modal-form">
+          <label>Username
+            <input id="modal-username" name="username" autocomplete="username" required>
+          </label>
+          <label>Password or app password
+            <input id="modal-password" name="password" type="password" autocomplete="current-password" required>
+          </label>
+          <div class="actions">
+            <button class="primary" type="submit">Test connection</button>
+            <button type="button" id="cancel-test-modal">Cancel</button>
+          </div>
+        </form>
+        <div class="message" id="modal-message"></div>
+      </div>
+    </div>
   </main>
 
   <script>
@@ -660,23 +1275,215 @@ function renderSetupPage(token: string): string {
     const message = document.querySelector("#message");
     const accountsEl = document.querySelector("#accounts");
     const statusEl = document.querySelector("#status");
+    const discoveryEl = document.querySelector("#discovery");
+    const testModal = document.querySelector("#test-modal");
+    const testModalForm = document.querySelector("#test-modal-form");
+    const modalMessage = document.querySelector("#modal-message");
+    let pendingCandidate = null;
+    let pendingEmail = "";
 
-    function setMessage(text, kind = "") {
-      message.textContent = text;
+    function setMessage(text, kind = "", details = null) {
+      message.textContent = "";
       message.className = "message " + kind;
+      const summary = document.createElement("div");
+      summary.textContent = text;
+      message.appendChild(summary);
+
+      if (details) {
+        message.appendChild(details);
+      }
+
       statusEl.textContent = text || "Local setup server ready";
+    }
+
+    function setModalMessage(text, kind = "", details = null) {
+      modalMessage.textContent = "";
+      modalMessage.className = "message " + kind;
+      const summary = document.createElement("div");
+      summary.textContent = text;
+      modalMessage.appendChild(summary);
+
+      if (details) {
+        modalMessage.appendChild(details);
+      }
+    }
+
+    function diagnosticDetails(diagnostic) {
+      if (!diagnostic) {
+        return null;
+      }
+
+      const details = document.createElement("div");
+      details.className = "message-details";
+
+      function addLine(label, value) {
+        if (!value) {
+          return;
+        }
+
+        const line = document.createElement("div");
+        line.textContent = label + ": " + value;
+        details.appendChild(line);
+      }
+
+      addLine("Category", diagnostic.category);
+      addLine("Code", diagnostic.code || diagnostic.responseStatus);
+      addLine("Server response", diagnostic.response);
+      addLine("Original error", diagnostic.originalMessage);
+
+      if (diagnostic.account) {
+        const secureText = diagnostic.account.secure ? "TLS on" : "TLS off";
+        addLine("Attempted", diagnostic.account.username + " at " + diagnostic.account.host + ":" + diagnostic.account.port + " (" + secureText + ")");
+      }
+
+      if (diagnostic.suggestions && diagnostic.suggestions.length) {
+        const list = document.createElement("ul");
+        for (const suggestion of diagnostic.suggestions) {
+          const item = document.createElement("li");
+          item.textContent = suggestion;
+          list.appendChild(item);
+        }
+        details.appendChild(list);
+      }
+
+      return details.childElementCount ? details : null;
+    }
+
+    function formatClientFailure(error) {
+      if (error instanceof TypeError) {
+        return {
+          error: "The setup page could not reach the local plugin server. Reload the page and reopen the setup URL if needed.",
+          diagnostic: {
+            category: "setup-server",
+            originalMessage: error.message,
+            suggestions: [
+              "Click Reload on this page.",
+              "Ask Codex to open the IMAP setup page again if the local server stopped."
+            ]
+          }
+        };
+      }
+
+      return {
+        error: error && error.message ? error.message : "Command failed.",
+        diagnostic: null
+      };
     }
 
     document.title = "IMAP Mailboxes Setup " + SETUP_UI_VERSION;
     console.info("IMAP Mailboxes setup UI", { version: SETUP_UI_VERSION, pid: SERVER_PID });
 
+    function accountIdFromEmail(email) {
+      return email
+        .trim()
+        .toLowerCase()
+        .replace(/@/g, "-")
+        .replace(/[^a-z0-9_-]/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^-|-$/g, "")
+        .slice(0, 48);
+    }
+
+    function clearVerifiedState() {
+      form.classList.remove("verified");
+    }
+
+    function applyCandidate(candidate, email, username, password) {
+      const accountId = accountIdFromEmail(email);
+      if (!document.querySelector("#accountId").value.trim()) {
+        document.querySelector("#accountId").value = accountId;
+      }
+      document.querySelector("#username").value = username || candidate.username || email;
+      document.querySelector("#host").value = candidate.host;
+      document.querySelector("#port").value = candidate.port;
+      document.querySelector("#secure").checked = candidate.secure;
+      document.querySelector("#password").value = password || "";
+      form.classList.add("verified");
+      setMessage("Connection succeeded for " + candidate.provider + ". Save the account to keep these settings.", "ok");
+    }
+
+    function openTestModal(candidate, email) {
+      pendingCandidate = candidate;
+      pendingEmail = email;
+      document.querySelector("#test-modal-summary").textContent = candidate.host + ":" + candidate.port + " (" + (candidate.secure ? "TLS on" : "TLS off") + ")";
+      document.querySelector("#modal-username").value = document.querySelector("#username").value.trim() || candidate.username || email;
+      document.querySelector("#modal-password").value = "";
+      setModalMessage("");
+      testModal.classList.add("open");
+      document.querySelector("#modal-password").focus();
+    }
+
+    function closeTestModal() {
+      pendingCandidate = null;
+      pendingEmail = "";
+      document.querySelector("#modal-password").value = "";
+      testModal.classList.remove("open");
+    }
+
+    function renderDiscovery(result) {
+      discoveryEl.textContent = "";
+
+      const heading = document.createElement("strong");
+      heading.textContent = result.provider
+        ? "Detected " + result.provider
+        : "Detected possible IMAP settings";
+      discoveryEl.appendChild(heading);
+
+      if (result.mx && result.mx.length) {
+        const mx = document.createElement("div");
+        mx.className = "candidate-meta";
+        mx.textContent = "MX: " + result.mx.slice(0, 3).map((entry) => entry.exchange + " (" + entry.priority + ")").join(", ");
+        discoveryEl.appendChild(mx);
+      }
+
+      if (result.warnings && result.warnings.length) {
+        for (const warning of result.warnings) {
+          const line = document.createElement("div");
+          line.className = "candidate-meta";
+          line.textContent = warning;
+          discoveryEl.appendChild(line);
+        }
+      }
+
+      if (!result.candidates.length) {
+        const empty = document.createElement("div");
+        empty.className = "candidate-meta";
+        empty.textContent = "No IMAP candidates were detected. Use the manual settings below.";
+        discoveryEl.appendChild(empty);
+        return;
+      }
+
+      result.candidates.forEach((candidate, index) => {
+        const item = document.createElement("div");
+        item.className = "candidate";
+        item.innerHTML = \`
+          <div class="candidate-topline">
+            <strong></strong>
+            <span class="pill"></span>
+          </div>
+          <div class="candidate-meta"></div>
+          <div class="candidate-meta"></div>
+          <div>
+            <button type="button" class="compact">Test connection</button>
+          </div>
+        \`;
+        item.querySelector("strong").textContent = candidate.provider;
+        item.querySelector(".pill").textContent = Math.round(candidate.confidence * 100) + "% " + candidate.source;
+        item.querySelectorAll(".candidate-meta")[0].textContent = candidate.username + " at " + candidate.host + ":" + candidate.port + " (" + (candidate.secure ? "TLS on" : "TLS off") + ")";
+        item.querySelectorAll(".candidate-meta")[1].textContent = (candidate.resolves ? "Host resolves. " : "Host did not resolve yet. ") + (candidate.note || "");
+        item.querySelector("button").addEventListener("click", () => openTestModal(candidate, result.email));
+        discoveryEl.appendChild(item);
+      });
+    }
+
     function formPayload() {
+      const email = document.querySelector("#email").value.trim();
       return {
-        accountId: document.querySelector("#accountId").value.trim(),
+        accountId: document.querySelector("#accountId").value.trim() || accountIdFromEmail(email),
         host: document.querySelector("#host").value.trim(),
         port: Number(document.querySelector("#port").value),
         secure: document.querySelector("#secure").checked,
-        username: document.querySelector("#username").value.trim(),
+        username: document.querySelector("#username").value.trim() || email,
         credentialProvider: "local-keychain",
         password: document.querySelector("#password").value || undefined
       };
@@ -684,9 +1491,14 @@ function renderSetupPage(token: string): string {
 
     async function api(path, options = {}) {
       const response = await fetch(path, { ...options, headers: { ...headers, ...(options.headers || {}) } });
-      const payload = await response.json();
+      const contentType = response.headers.get("content-type") || "";
+      const payload = contentType.includes("application/json")
+        ? await response.json()
+        : { error: await response.text() || "Request failed." };
       if (!response.ok) {
-        throw new Error(payload.error || "Request failed.");
+        const error = new Error(payload.error || "Request failed.");
+        error.diagnostic = payload.diagnostic || null;
+        throw error;
       }
       return payload;
     }
@@ -723,10 +1535,13 @@ function renderSetupPage(token: string): string {
             await api("/api/accounts/" + encodeURIComponent(account.id) + "/test", { method: "POST" });
             setMessage("Connection succeeded for " + account.id + ".", "ok");
           } catch (error) {
-            setMessage(error.message, "warn");
+            const failure = formatClientFailure(error);
+            setMessage(failure.error, "warn", diagnosticDetails(error.diagnostic || failure.diagnostic));
           }
         });
         item.querySelector('[data-action="edit"]').addEventListener("click", () => {
+          clearVerifiedState();
+          document.querySelector("#email").value = account.username.includes("@") ? account.username : "";
           document.querySelector("#accountId").value = account.id;
           document.querySelector("#username").value = account.username;
           document.querySelector("#host").value = account.host;
@@ -742,12 +1557,68 @@ function renderSetupPage(token: string): string {
             setMessage("Removed " + account.id + ".", "ok");
             await loadAccounts();
           } catch (error) {
-            setMessage(error.message, "warn");
+            const failure = formatClientFailure(error);
+            setMessage(failure.error, "warn", diagnosticDetails(error.diagnostic || failure.diagnostic));
           }
         });
         accountsEl.appendChild(item);
       }
     }
+
+    document.querySelector("#discover-settings").addEventListener("click", async () => {
+      clearVerifiedState();
+      const email = document.querySelector("#email").value.trim();
+      setMessage("Detecting settings...");
+      discoveryEl.textContent = "";
+      try {
+        const result = await api("/api/discover", { method: "POST", body: JSON.stringify({ email }) });
+        renderDiscovery(result);
+        setMessage(result.candidates.length ? "Settings detected. Test a candidate to apply it." : "No settings were detected.", result.candidates.length ? "ok" : "warn");
+      } catch (error) {
+        const failure = formatClientFailure(error);
+        setMessage(failure.error, "warn", diagnosticDetails(error.diagnostic || failure.diagnostic));
+      }
+    });
+
+    testModalForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!pendingCandidate) {
+        return;
+      }
+
+      const username = document.querySelector("#modal-username").value.trim();
+      const password = document.querySelector("#modal-password").value;
+      setModalMessage("Testing connection...");
+      try {
+        await api("/api/test", {
+          method: "POST",
+          body: JSON.stringify({
+            accountId: accountIdFromEmail(pendingEmail),
+            host: pendingCandidate.host,
+            port: pendingCandidate.port,
+            secure: pendingCandidate.secure,
+            username,
+            credentialProvider: "local-keychain",
+            password
+          })
+        });
+        const testedCandidate = pendingCandidate;
+        const testedEmail = pendingEmail;
+        closeTestModal();
+        applyCandidate(testedCandidate, testedEmail, username, password);
+      } catch (error) {
+        const failure = formatClientFailure(error);
+        setModalMessage(failure.error, "warn", diagnosticDetails(error.diagnostic || failure.diagnostic));
+      }
+    });
+
+    document.querySelector("#close-test-modal").addEventListener("click", closeTestModal);
+    document.querySelector("#cancel-test-modal").addEventListener("click", closeTestModal);
+    testModal.addEventListener("click", (event) => {
+      if (event.target === testModal) {
+        closeTestModal();
+      }
+    });
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -757,7 +1628,8 @@ function renderSetupPage(token: string): string {
         setMessage("Account saved.", "ok");
         await loadAccounts();
       } catch (error) {
-        setMessage(error.message, "warn");
+        const failure = formatClientFailure(error);
+        setMessage(failure.error, "warn", diagnosticDetails(error.diagnostic || failure.diagnostic));
       }
     });
     document.querySelector("#test-current").addEventListener("click", async () => {
@@ -766,19 +1638,29 @@ function renderSetupPage(token: string): string {
         await api("/api/test", { method: "POST", body: JSON.stringify(formPayload()) });
         setMessage("Connection succeeded.", "ok");
       } catch (error) {
-        setMessage(error.message, "warn");
+        const failure = formatClientFailure(error);
+        setMessage(failure.error, "warn", diagnosticDetails(error.diagnostic || failure.diagnostic));
       }
     });
     form.addEventListener("reset", () => setTimeout(() => {
+      clearVerifiedState();
+      discoveryEl.textContent = "";
       setMessage("");
     }));
+    for (const selector of ["#email", "#username", "#host", "#port", "#secure", "#password"]) {
+      document.querySelector(selector).addEventListener("input", clearVerifiedState);
+      document.querySelector(selector).addEventListener("change", clearVerifiedState);
+    }
     document.querySelector("#reload-page").addEventListener("click", () => {
       const url = new URL(window.location.href);
       url.searchParams.set("r", Date.now().toString());
       window.location.replace(url.toString());
     });
 
-    loadAccounts().catch((error) => setMessage(error.message, "warn"));
+    loadAccounts().catch((error) => {
+      const failure = formatClientFailure(error);
+      setMessage(failure.error, "warn", diagnosticDetails(error.diagnostic || failure.diagnostic));
+    });
   </script>
 </body>
 </html>`;
