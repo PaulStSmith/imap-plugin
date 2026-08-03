@@ -2,6 +2,7 @@ export type CredentialProviderKind = "local-keychain" | "1password" | "env";
 
 export interface AccountProfile {
   id: string;
+  email?: string;
   host: string;
   port: number;
   secure: boolean;

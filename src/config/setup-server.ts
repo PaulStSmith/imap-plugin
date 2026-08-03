@@ -9,7 +9,7 @@ import { getAccount, readAccounts, removeAccount, upsertAccount } from "./accoun
 import { readPreferences, updatePreferences } from "./preferences.js";
 import { publicAccount } from "./public-account.js";
 import { createCredentialProvider } from "../credentials/index.js";
-import { searchMessages, testAccount } from "../mail/imap-client.js";
+import { searchMessages, testAccount, updateMessageFlags } from "../mail/imap-client.js";
 import { sendMessage, testSmtpConnection } from "../mail/smtp-client.js";
 import { AccountProfile } from "../types.js";
 import { addAccountSchema } from "../tools/schemas.js";
@@ -21,7 +21,7 @@ export interface SetupServerInfo {
   token: string;
 }
 
-const SETUP_UI_VERSION = "20260803.1745";
+const SETUP_UI_VERSION = "20260803.1845";
 
 let setupServerPromise: Promise<SetupServerInfo> | undefined;
 
@@ -532,6 +532,7 @@ function readJson(request: IncomingMessage): Promise<unknown> {
 function accountFromInput(input: ReturnType<typeof addAccountSchema.parse>): AccountProfile {
   return {
     id: input.accountId,
+    email: input.email,
     host: input.host,
     port: input.port,
     secure: input.secure,
@@ -567,6 +568,28 @@ async function saveAccount(rawInput: unknown): Promise<AccountProfile> {
 
   await upsertAccount(account);
   return account;
+}
+
+function emailAddress(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed) ? trimmed : undefined;
+}
+
+function roundTripRecipient(account: AccountProfile): string {
+  const recipient = emailAddress(account.email) || emailAddress(account.username);
+  if (!recipient) {
+    throw new Error("Round-trip test requires the account's mailbox email address. Add the mailbox email to the account profile, then try again.");
+  }
+
+  return recipient;
+}
+
+function roundTripSender(account: AccountProfile): string {
+  return account.smtpUsername || account.username;
 }
 
 async function testInputAccount(rawInput: unknown) {
@@ -610,9 +633,11 @@ function hasSmtpOverrides(input: ReturnType<typeof addAccountSchema.parse>): boo
 
 async function roundTripAccount(account: AccountProfile, overridePassword?: string) {
   const subject = `IMAP Plugin round-trip ${randomBytes(8).toString("hex")}`;
+  const sender = roundTripSender(account);
+  const recipient = roundTripRecipient(account);
   await testAccount(account, overridePassword);
   await sendMessage(account, {
-    to: [account.username],
+    to: [recipient],
     subject,
     text: `This is an IMAP Plugin round-trip test sent at ${new Date().toISOString()}.`,
     overridePassword
@@ -627,11 +652,22 @@ async function roundTripAccount(account: AccountProfile, overridePassword?: stri
     }, overridePassword);
 
     if (messages.length) {
+      await updateMessageFlags(account, {
+        mailbox: "INBOX",
+        uids: [messages[0].uid],
+        mode: "add",
+        flags: ["\\Seen"]
+      });
+
       return {
         ok: true,
         subject,
+        sender,
+        recipient,
         found: true,
         attempts: attempt,
+        markedRead: true,
+        steps: roundTripSteps(true),
         messages
       };
     }
@@ -640,10 +676,25 @@ async function roundTripAccount(account: AccountProfile, overridePassword?: stri
   return {
     ok: false,
     subject,
+    sender,
+    recipient,
     found: false,
     attempts: 6,
+    markedRead: false,
+    steps: roundTripSteps(false),
     message: "The test email was sent, but it was not found in INBOX yet."
   };
+}
+
+function roundTripSteps(found: boolean) {
+  return [
+    { id: "sending", label: "Sending email", status: "done" },
+    { id: "sent", label: "Email sent.", status: "done" },
+    { id: "searching", label: "Searching round trip email", status: "done" },
+    { id: "found", label: "Round trip email found.", status: found ? "done" : "failed" },
+    { id: "marking-read", label: "Marking email read.", status: found ? "done" : "pending" },
+    { id: "successful", label: "Round trip successful.", status: found ? "done" : "pending" }
+  ];
 }
 
 async function roundTripInputAccount(rawInput: unknown) {
@@ -863,18 +914,52 @@ function renderSetupPage(token: string): string {
   <title>IMAP Mailboxes Setup</title>
   <style>
     :root {
-      color-scheme: light;
+      color-scheme: light dark;
       --ink: #1f2933;
       --muted: #5f6f7a;
       --line: #d8e1e7;
       --surface: #ffffff;
       --page: #f5f7f4;
+      --field: #ffffff;
+      --subtle: #fbfcfc;
+      --chip: #e8f1f4;
+      --progress-track: #eef3f4;
+      --on-accent: #ffffff;
+      --overlay: rgba(31, 41, 51, 0.48);
+      --shadow-soft: rgba(31, 41, 51, 0.16);
+      --shadow-strong: rgba(31, 41, 51, 0.28);
+      --logo-bg: #ffffff;
       --accent: #256d85;
       --accent-dark: #1f586d;
       --accent-soft: #e8f4f7;
       --ok: #1c7c54;
       --warn: #b85c38;
       --focus: #e1b12c;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #edf3f6;
+        --muted: #a9b7c0;
+        --line: #31424c;
+        --surface: #172229;
+        --page: #0d151a;
+        --field: #101a20;
+        --subtle: #121d23;
+        --chip: #203640;
+        --progress-track: #22343c;
+        --on-accent: #ffffff;
+        --overlay: rgba(4, 10, 14, 0.72);
+        --shadow-soft: rgba(0, 0, 0, 0.38);
+        --shadow-strong: rgba(0, 0, 0, 0.55);
+        --logo-bg: #ffffff;
+        --accent: #5fb3ca;
+        --accent-dark: #8bd5e6;
+        --accent-soft: #12313a;
+        --ok: #6fd1a2;
+        --warn: #ffad85;
+        --focus: #f2c94c;
+      }
     }
 
     * { box-sizing: border-box; }
@@ -912,7 +997,7 @@ function renderSetupPage(token: string): string {
       height: 56px;
       border-radius: 12px;
       border: 1px solid var(--line);
-      background: #fff;
+      background: var(--logo-bg);
       object-fit: contain;
     }
 
@@ -999,11 +1084,11 @@ function renderSetupPage(token: string): string {
       padding: 9px 10px;
       font: inherit;
       color: var(--ink);
-      background: #fff;
+      background: var(--field);
     }
 
     input:focus, select:focus, button:focus {
-      outline: 3px solid rgba(225, 177, 44, 0.35);
+      outline: 3px solid color-mix(in srgb, var(--focus) 35%, transparent);
       outline-offset: 1px;
     }
 
@@ -1042,7 +1127,7 @@ function renderSetupPage(token: string): string {
       border: 1px solid var(--line);
       border-radius: 50%;
       color: var(--accent-dark);
-      background: #fff;
+      background: var(--field);
       cursor: pointer;
       font-weight: 800;
       list-style: none;
@@ -1062,8 +1147,8 @@ function renderSetupPage(token: string): string {
       border-radius: 8px;
       padding: 14px;
       color: var(--ink);
-      background: #fff;
-      box-shadow: 0 18px 40px rgba(31, 41, 51, 0.16);
+      background: var(--surface);
+      box-shadow: 0 18px 40px var(--shadow-soft);
       font-size: 13px;
     }
 
@@ -1100,7 +1185,7 @@ function renderSetupPage(token: string): string {
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 12px;
-      background: #fbfcfc;
+      background: var(--subtle);
     }
 
     .discovery:empty {
@@ -1113,7 +1198,7 @@ function renderSetupPage(token: string): string {
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 10px;
-      background: #fff;
+      background: var(--field);
     }
 
     .candidate-topline {
@@ -1136,7 +1221,7 @@ function renderSetupPage(token: string): string {
       display: none;
       place-items: center;
       padding: 20px;
-      background: rgba(31, 41, 51, 0.48);
+      background: var(--overlay);
     }
 
     .modal-backdrop.open {
@@ -1148,8 +1233,8 @@ function renderSetupPage(token: string): string {
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 18px;
-      background: #fff;
-      box-shadow: 0 24px 70px rgba(31, 41, 51, 0.28);
+      background: var(--surface);
+      box-shadow: 0 24px 70px var(--shadow-strong);
     }
 
     .modal form {
@@ -1173,6 +1258,111 @@ function renderSetupPage(token: string): string {
       color: var(--muted);
       font-size: 13px;
       overflow-wrap: anywhere;
+    }
+
+    .round-trip-route {
+      display: grid;
+      gap: 8px;
+      margin: 12px 0;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--subtle);
+    }
+
+    .route-line {
+      display: grid;
+      grid-template-columns: 48px 1fr;
+      gap: 8px;
+      font-size: 13px;
+    }
+
+    .route-line span:first-child {
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .route-line span:last-child {
+      overflow-wrap: anywhere;
+    }
+
+    .round-trip-progress {
+      height: 8px;
+      margin-top: 12px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--progress-track);
+    }
+
+    .round-trip-progress-bar {
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--accent), var(--ok));
+      transition: width 240ms ease;
+    }
+
+    .round-trip-steps {
+      display: grid;
+      gap: 8px;
+      margin: 12px 0 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .round-trip-steps li {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 28px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .step-dot {
+      width: 10px;
+      height: 10px;
+      flex: 0 0 auto;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      background: var(--field);
+    }
+
+    .step-active {
+      color: var(--ink);
+      font-weight: 700;
+    }
+
+    .step-active .step-dot {
+      border-color: var(--accent);
+      border-top-color: transparent;
+      background: var(--field);
+      animation: round-trip-spin 760ms linear infinite;
+    }
+
+    .step-done {
+      color: var(--ok);
+      font-weight: 700;
+    }
+
+    .step-done .step-dot {
+      border-color: var(--ok);
+      background: var(--ok);
+    }
+
+    .step-failed {
+      color: var(--warn);
+      font-weight: 700;
+    }
+
+    .step-failed .step-dot {
+      border-color: var(--warn);
+      background: var(--warn);
+    }
+
+    @keyframes round-trip-spin {
+      to { transform: rotate(360deg); }
     }
 
     .modal-close {
@@ -1200,7 +1390,7 @@ function renderSetupPage(token: string): string {
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 12px;
-      background: #fbfcfc;
+      background: var(--subtle);
     }
 
     button {
@@ -1212,13 +1402,13 @@ function renderSetupPage(token: string): string {
       font-weight: 700;
       cursor: pointer;
       color: var(--ink);
-      background: #fff;
+      background: var(--field);
     }
 
     button.primary {
       border-color: var(--accent);
       background: var(--accent);
-      color: #fff;
+      color: var(--on-accent);
     }
 
     button.primary:hover { background: var(--accent-dark); }
@@ -1242,7 +1432,7 @@ function renderSetupPage(token: string): string {
       padding: 12px;
       display: grid;
       gap: 10px;
-      background: #fbfcfc;
+      background: var(--subtle);
     }
 
     .account-title {
@@ -1270,7 +1460,7 @@ function renderSetupPage(token: string): string {
     .pill {
       border-radius: 999px;
       padding: 3px 8px;
-      background: #e8f1f4;
+      background: var(--chip);
       color: var(--accent-dark);
       font-size: 12px;
       white-space: nowrap;
@@ -1461,6 +1651,31 @@ function renderSetupPage(token: string): string {
         <div class="message" id="modal-message"></div>
       </div>
     </div>
+
+    <div class="modal-backdrop" id="round-trip-modal" role="dialog" aria-modal="true" aria-labelledby="round-trip-modal-title">
+      <div class="modal">
+        <div class="modal-title">
+          <div>
+            <h2 id="round-trip-modal-title">Round-trip test</h2>
+            <div class="modal-summary" id="round-trip-modal-summary"></div>
+          </div>
+          <button class="modal-close" type="button" id="close-round-trip-modal" aria-label="Close">x</button>
+        </div>
+        <div class="round-trip-route">
+          <div class="route-line"><span>From</span><span id="round-trip-from"></span></div>
+          <div class="route-line"><span>To</span><span id="round-trip-to"></span></div>
+        </div>
+        <div class="actions">
+          <button class="primary" type="button" id="start-round-trip">Start</button>
+          <button type="button" id="cancel-round-trip">Cancel</button>
+        </div>
+        <div class="round-trip-progress" aria-hidden="true">
+          <div class="round-trip-progress-bar" id="round-trip-progress-bar"></div>
+        </div>
+        <ol class="round-trip-steps" id="round-trip-steps"></ol>
+        <div class="message" id="round-trip-message"></div>
+      </div>
+    </div>
   </main>
 
   <script>
@@ -1476,10 +1691,27 @@ function renderSetupPage(token: string): string {
     const testModal = document.querySelector("#test-modal");
     const testModalForm = document.querySelector("#test-modal-form");
     const modalMessage = document.querySelector("#modal-message");
+    const roundTripModal = document.querySelector("#round-trip-modal");
+    const roundTripMessage = document.querySelector("#round-trip-message");
+    const roundTripStepsEl = document.querySelector("#round-trip-steps");
+    const roundTripProgressBar = document.querySelector("#round-trip-progress-bar");
+    const startRoundTripButton = document.querySelector("#start-round-trip");
+    const cancelRoundTripButton = document.querySelector("#cancel-round-trip");
     let paidActions = false;
     let smtpActionsEnabled = false;
     let pendingCandidate = null;
     let pendingEmail = "";
+    let pendingRoundTrip = null;
+    let roundTripRunning = false;
+
+    const roundTripStepLabels = [
+      ["sending", "Sending email"],
+      ["sent", "Email sent."],
+      ["searching", "Searching round trip email"],
+      ["found", "Round trip email found."],
+      ["marking-read", "Marking email read."],
+      ["successful", "Round trip successful."]
+    ];
 
     function setMessage(text, kind = "", details = null) {
       message.textContent = "";
@@ -1504,6 +1736,125 @@ function renderSetupPage(token: string): string {
 
       if (details) {
         modalMessage.appendChild(details);
+      }
+    }
+
+    function setRoundTripMessage(text, kind = "", details = null) {
+      roundTripMessage.textContent = "";
+      roundTripMessage.className = "message " + kind;
+      const summary = document.createElement("div");
+      summary.textContent = text;
+      roundTripMessage.appendChild(summary);
+
+      if (details) {
+        roundTripMessage.appendChild(details);
+      }
+    }
+
+    function renderRoundTripSteps(steps = [], activeId = "") {
+      const byId = new Map(steps.map((step) => [step.id, step]));
+      roundTripStepsEl.textContent = "";
+
+      for (const [id, label] of roundTripStepLabels) {
+        const status = byId.get(id)?.status || (id === activeId ? "active" : "pending");
+        const item = document.createElement("li");
+        item.className = "step-" + status;
+
+        const dot = document.createElement("span");
+        dot.className = "step-dot";
+        dot.setAttribute("aria-hidden", "true");
+
+        const text = document.createElement("span");
+        text.textContent = byId.get(id)?.label || label;
+
+        item.appendChild(dot);
+        item.appendChild(text);
+        roundTripStepsEl.appendChild(item);
+      }
+
+      updateRoundTripProgress(steps, activeId);
+    }
+
+    function updateRoundTripProgress(steps = [], activeId = "") {
+      const total = roundTripStepLabels.length;
+      const doneCount = steps.filter((step) => step.status === "done").length;
+      const failedIndex = steps.findIndex((step) => step.status === "failed");
+      const activeIndex = roundTripStepLabels.findIndex(([id]) => id === activeId);
+      const currentIndex = failedIndex >= 0 ? failedIndex : activeIndex;
+      const progressUnits = Math.max(doneCount, currentIndex >= 0 ? currentIndex + 0.45 : 0);
+      const percent = Math.max(0, Math.min(100, Math.round((progressUnits / total) * 100)));
+      roundTripProgressBar.style.width = percent + "%";
+    }
+
+    function previewRoundTripFromAccount(account) {
+      return {
+        from: account.smtpUsername || account.username,
+        to: account.email || account.username
+      };
+    }
+
+    function previewRoundTripFromPayload(payload) {
+      return {
+        from: payload.smtpUsername || payload.username,
+        to: payload.email || payload.username
+      };
+    }
+
+    function openRoundTripModal(config) {
+      pendingRoundTrip = config;
+      roundTripRunning = false;
+      document.querySelector("#round-trip-modal-summary").textContent = config.title;
+      document.querySelector("#round-trip-from").textContent = config.from;
+      document.querySelector("#round-trip-to").textContent = config.to;
+      startRoundTripButton.disabled = false;
+      cancelRoundTripButton.disabled = false;
+      cancelRoundTripButton.textContent = "Cancel";
+      renderRoundTripSteps();
+      setRoundTripMessage("");
+      roundTripModal.classList.add("open");
+      startRoundTripButton.focus();
+    }
+
+    function closeRoundTripModal() {
+      if (roundTripRunning) {
+        return;
+      }
+
+      pendingRoundTrip = null;
+      roundTripModal.classList.remove("open");
+    }
+
+    async function startPendingRoundTrip() {
+      if (!pendingRoundTrip || roundTripRunning) {
+        return;
+      }
+
+      roundTripRunning = true;
+      startRoundTripButton.disabled = true;
+      cancelRoundTripButton.disabled = true;
+      renderRoundTripSteps([], "sending");
+      setRoundTripMessage("Sending email...");
+      setMessage("Running round-trip test...");
+
+      try {
+        const result = await pendingRoundTrip.run();
+        renderRoundTripSteps(result.steps || [], "");
+        const success = Boolean(result.found);
+        const text = success ? "Round trip successful." : result.message;
+        setRoundTripMessage(text, success ? "ok" : "warn");
+        setMessage(
+          success ? "Round-trip succeeded via " + result.recipient + "." : result.message,
+          success ? "ok" : "warn"
+        );
+      } catch (error) {
+        const failure = formatClientFailure(error);
+        renderRoundTripSteps([{ id: "sending", label: "Sending email", status: "failed" }], "");
+        setRoundTripMessage(failure.error, "warn", diagnosticDetails(error.diagnostic || failure.diagnostic));
+        setMessage(failure.error, "warn", diagnosticDetails(error.diagnostic || failure.diagnostic));
+      } finally {
+        roundTripRunning = false;
+        cancelRoundTripButton.disabled = false;
+        cancelRoundTripButton.textContent = "Close";
       }
     }
 
@@ -1683,6 +2034,7 @@ function renderSetupPage(token: string): string {
       const email = document.querySelector("#email").value.trim();
       const payload = {
         accountId: document.querySelector("#accountId").value.trim() || accountIdFromEmail(email),
+        email: email || undefined,
         host: document.querySelector("#host").value.trim(),
         port: Number(document.querySelector("#port").value),
         secure: document.querySelector("#secure").checked,
@@ -1739,7 +2091,7 @@ function renderSetupPage(token: string): string {
         \`;
         item.querySelector("strong").textContent = account.id;
         item.querySelector(".pill").textContent = "Local keychain";
-        item.querySelector("small").textContent = account.username + " at " + account.host + ":" + account.port
+        item.querySelector("small").textContent = (account.email || account.username) + " as " + account.username + " at " + account.host + ":" + account.port
           + (account.smtpHost ? " / SMTP " + account.smtpHost + ":" + (account.smtpPort || 587) : "");
         item.querySelector('[data-action="test"]').addEventListener("click", async () => {
           setMessage("Testing " + account.id + "...");
@@ -1752,18 +2104,17 @@ function renderSetupPage(token: string): string {
           }
         });
         item.querySelector('[data-action="round-trip"]').addEventListener("click", async () => {
-          setMessage("Running round-trip test for " + account.id + "...");
-          try {
-        const result = await api("/api/accounts/" + encodeURIComponent(account.id) + "/round-trip", { method: "POST" });
-            setMessage(result.found ? "Round-trip succeeded for " + account.id + "." : result.message, result.found ? "ok" : "warn");
-          } catch (error) {
-            const failure = formatClientFailure(error);
-            setMessage(failure.error, "warn", diagnosticDetails(error.diagnostic || failure.diagnostic));
-          }
+          const preview = previewRoundTripFromAccount(account);
+          openRoundTripModal({
+            title: "Saved account " + account.id,
+            from: preview.from,
+            to: preview.to,
+            run: () => api("/api/accounts/" + encodeURIComponent(account.id) + "/round-trip", { method: "POST" })
+          });
         });
         item.querySelector('[data-action="edit"]').addEventListener("click", () => {
           clearVerifiedState();
-          document.querySelector("#email").value = account.username.includes("@") ? account.username : "";
+          document.querySelector("#email").value = account.email || (account.username.includes("@") ? account.username : "");
           document.querySelector("#accountId").value = account.id;
           document.querySelector("#username").value = account.username;
           document.querySelector("#host").value = account.host;
@@ -1869,13 +2220,21 @@ function renderSetupPage(token: string): string {
       }
     });
     document.querySelector("#round-trip-current").addEventListener("click", async () => {
-      setMessage("Running round-trip test...");
-      try {
-        const result = await api("/api/round-trip", { method: "POST", body: JSON.stringify(formPayload()) });
-        setMessage(result.found ? "Round-trip succeeded." : result.message, result.found ? "ok" : "warn");
-      } catch (error) {
-        const failure = formatClientFailure(error);
-        setMessage(failure.error, "warn", diagnosticDetails(error.diagnostic || failure.diagnostic));
+      const payload = formPayload();
+      const preview = previewRoundTripFromPayload(payload);
+      openRoundTripModal({
+        title: "Current form settings",
+        from: preview.from,
+        to: preview.to,
+        run: () => api("/api/round-trip", { method: "POST", body: JSON.stringify(payload) })
+      });
+    });
+    document.querySelector("#close-round-trip-modal").addEventListener("click", closeRoundTripModal);
+    cancelRoundTripButton.addEventListener("click", closeRoundTripModal);
+    startRoundTripButton.addEventListener("click", startPendingRoundTrip);
+    roundTripModal.addEventListener("click", (event) => {
+      if (event.target === roundTripModal) {
+        closeRoundTripModal();
       }
     });
     document.querySelector("#smtpActionsEnabled").addEventListener("change", async (event) => {

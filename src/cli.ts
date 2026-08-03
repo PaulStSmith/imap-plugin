@@ -57,6 +57,7 @@ account
   .requiredOption("--host <host>")
   .option("--port <port>", "IMAP port", "993")
   .option("--secure <secure>", "Use TLS", "true")
+  .option("--email <email>", "Mailbox email address used for round-trip tests")
   .requiredOption("--username <username>")
   .option("--credential-provider <provider>", "local-keychain, 1password, or env")
   .option("--credential-ref <ref>", "1Password op:// reference or environment variable name")
@@ -69,6 +70,7 @@ account
     const credentialProvider = (options.credentialProvider ?? defaultCredentialProviderKind()) as CredentialProviderKind;
     const profile: AccountProfile = {
       id: accountId,
+      email: options.email,
       host: options.host,
       port: Number(options.port),
       secure: options.secure === "true",

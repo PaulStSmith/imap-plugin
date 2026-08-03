@@ -3,6 +3,7 @@ import { AccountProfile } from "../types.js";
 export function publicAccount(account: AccountProfile) {
   return {
     id: account.id,
+    email: account.email,
     host: account.host,
     port: account.port,
     secure: account.secure,

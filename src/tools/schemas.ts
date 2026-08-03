@@ -6,6 +6,7 @@ export const accountIdSchema = z.object({
 
 export const addAccountSchema = z.object({
   accountId: z.string().min(1).regex(/^[a-zA-Z0-9_-]+$/),
+  email: z.string().email().optional().describe("Mailbox email address. Used as the round-trip test recipient."),
   host: z.string().min(1),
   port: z.number().int().min(1).max(65535).default(993),
   secure: z.boolean().default(true),
