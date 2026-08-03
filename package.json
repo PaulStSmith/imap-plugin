@@ -1,7 +1,7 @@
 {
   "name": "imap-plugin",
-  "version": "0.1.0",
-  "description": "Codex plugin MCP server for generic IMAP mailboxes.",
+  "version": "0.5.0-beta.0",
+  "description": "Codex-exclusive beta plugin MCP server for generic IMAP mailboxes.",
   "type": "module",
   "main": "dist/server.js",
   "bin": {
@@ -10,9 +10,23 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/server.ts",
+    "package:check": "npm run build && npm pack --dry-run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/server.js"
   },
+  "files": [
+    ".codex-plugin/",
+    ".mcp.json",
+    "assets/",
+    "commands/",
+    "dist/",
+    "docs/assets/",
+    "docs/index.html",
+    "docs/privacy.html",
+    "docs/styles.css",
+    "docs/terms.html",
+    "README.md"
+  ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.3",
     "commander": "^12.1.0",

@@ -1,6 +1,8 @@
-# IMAP Plugin
+# IMAP Mailboxes Beta
 
 Connect Codex to generic IMAP mailboxes through an MCP server.
+
+IMAP Mailboxes is a Codex-exclusive plugin. It is not a general ChatGPT GPT, hosted mailbox service, or non-Codex assistant integration.
 
 This is a greenfield v1 focused on safe read-only access:
 
@@ -113,6 +115,7 @@ The page supports:
 - Add or update account profiles.
 - Test a connection before saving.
 - Test saved accounts.
+- Run paid SMTP round-trip tests that show the From/To addresses, send to the account's own mailbox address, verify delivery in that account's `INBOX`, and mark the test message read.
 - Remove saved accounts and local keychain secrets.
 - Store credentials in the local operating system keychain.
 

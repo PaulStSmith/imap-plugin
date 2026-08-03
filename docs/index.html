@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>IMAP Mailboxes for Codex</title>
+  <title>IMAP Mailboxes Beta for Codex</title>
   <meta name="description" content="Universal IMAP mailbox access for Codex, starting with safe read-only email search and message reading.">
   <link rel="stylesheet" href="./styles.css">
 </head>
@@ -26,10 +26,11 @@
       <div class="hero-inner">
         <div class="hero-copy-block">
           <p class="eyebrow">Universal mailbox access for Codex</p>
-          <h1>IMAP Mailboxes</h1>
+          <h1>IMAP Mailboxes Beta</h1>
           <p class="hero-copy">
             Bring generic IMAP email accounts into Codex without waiting for a provider-specific connector.
             Start with safe read-only search, summaries, and message reading; unlock send and mailbox actions later.
+            This is a Codex-exclusive plugin, not a general ChatGPT GPT or hosted mailbox service.
           </p>
           <div class="hero-actions">
             <a class="button primary" href="#setup">Configure in Codex</a>
@@ -103,6 +104,7 @@
             <li>SMTP send and reply workflows</li>
             <li>Draft-first sending</li>
             <li>Forward and reply with proper headers</li>
+            <li>Guided round-trip tests to the account's own INBOX</li>
             <li>Move, archive, and mark messages</li>
             <li>Multiple mailboxes</li>
           </ul>
@@ -135,6 +137,7 @@
         <li>Click Try now and run <code>/imap-configure</code>. You can also ask Codex: <code>Open the IMAP plugin setup page</code>.</li>
         <li>Add your IMAP host, port, username, TLS setting, and credential provider.</li>
         <li>Use Test connection before saving the mailbox profile.</li>
+        <li>For paid SMTP checks, use Round-trip to review From/To, send only to that account's mailbox address, verify the message in its INBOX, and mark it read.</li>
       </ol>
     </section>
 
@@ -145,13 +148,14 @@
       </div>
       <p>
         IMAP Mailboxes is currently being developed as a private Codex plugin. The public website explains the product direction
-        while the plugin is tested, hardened, and prepared for broader distribution.
+        while the plugin is tested, hardened, and prepared for broader Codex distribution. It is not currently offered for ChatGPT GPTs,
+        Claude, or other non-Codex assistant surfaces.
       </p>
     </section>
   </main>
 
   <footer>
-    <span>IMAP Mailboxes for Codex</span>
+    <span>IMAP Mailboxes Beta for Codex</span>
     <a href="#setup">Setup instructions</a>
   </footer>
 </body>
