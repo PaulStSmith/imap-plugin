@@ -49,6 +49,12 @@ npm start
 
 The MCP server starts a localhost setup page when it launches. Ask Codex to call `imap_configure`, then open the returned URL. `imap_open_setup` remains as a compatibility alias.
 
+Users can also invoke the plugin command:
+
+```text
+/imap-configure
+```
+
 The page supports:
 
 - Add or update account profiles.

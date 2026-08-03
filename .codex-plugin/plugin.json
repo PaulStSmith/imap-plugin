@@ -1,6 +1,6 @@
 {
   "name": "imap-plugin",
-  "version": "0.1.0+codex.20260803112745",
+  "version": "0.1.0+codex.20260803114200",
   "description": "Connect Codex to generic IMAP mailboxes with safe read-only mailbox tools.",
   "author": {
     "name": "Paulo Santos"
