@@ -62,13 +62,17 @@ imap_activate_subscription({"subscriptionId":"sub_..."})
 
 The MCP server validates the subscription with Stripe, reads the local installation ID, and writes the entitlement to `dbo.InstallationEntitlements`. Stripe customer and subscription references belong in `dbo.InstallationEntitlements`, not in `web.config` or per-install environment variables.
 
-For automatic renewal and cancellation updates, configure Stripe to send subscription webhooks to:
+Automatic renewal and cancellation updates require a stable public MCP host URL. Do not register a Stripe webhook while the MCP host is still local, temporary, or unknown.
+
+Once the MCP host is stable, configure Stripe to send subscription webhooks to:
 
 ```text
 https://<public-mcp-host>/stripe/webhook
 ```
 
 Store the webhook signing secret as `IMAP_PLUGIN_STRIPE_WEBHOOK_SECRET` in the MCP host environment. The webhook updates an existing installation entitlement by Stripe subscription ID; the initial installation binding still happens through `imap_activate_subscription`.
+
+Until that public host exists, use `imap_activate_subscription` as the activation path and reconcile subscription changes manually in `dbo.InstallationEntitlements`.
 
 To make the GitHub Pages pricing button live, create a Stripe Payment Link for the Mail Actions recurring price and paste its public `https://buy.stripe.com/...` URL into `docs/index.html`:
 
