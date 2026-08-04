@@ -6,7 +6,7 @@ import { getAccount, readAccounts, removeAccount, upsertAccount } from "../confi
 import { readPreferences, updatePreferences } from "../config/preferences.js";
 import { publicAccount } from "../config/public-account.js";
 import { startSetupServer } from "../config/setup-server.js";
-import { createCredentialProvider } from "../credentials/index.js";
+import { createCredentialProvider, credentialRefForAccount, storesPassword } from "../credentials/index.js";
 import {
   appendMessage,
   copyMessages,
@@ -103,6 +103,7 @@ export function registerTools(server: McpServer): void {
   server.tool("imap_add_account", "Add or update an IMAP account profile.", addAccountSchema.shape, async (input) => {
     const account: AccountProfile = {
       id: input.accountId,
+      email: input.email,
       host: input.host,
       port: input.port,
       secure: input.secure,
@@ -110,13 +111,14 @@ export function registerTools(server: McpServer): void {
       credentialProvider: input.credentialProvider,
       credentialRef: input.credentialRef
     };
+    account.credentialRef = credentialRefForAccount(account);
 
-    if (input.credentialProvider === "local-keychain") {
+    if (storesPassword(input.credentialProvider)) {
       if (!input.password) {
-        throw new Error("A password is required when credentialProvider is local-keychain.");
+        throw new Error(`A password is required when credentialProvider is ${input.credentialProvider}.`);
       }
 
-      await createCredentialProvider("local-keychain").set?.(account, input.password);
+      await createCredentialProvider(input.credentialProvider).set?.(account, input.password);
     }
 
     await upsertAccount(account);

@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { importLicenseFile, licenseStatus } from "./billing/license.js";
 import { cleanupConfig } from "./config/cleanup.js";
 import { getAccount, readAccounts, removeAccount, upsertAccount } from "./config/accounts.js";
-import { createCredentialProvider, defaultCredentialProviderKind } from "./credentials/index.js";
+import { createCredentialProvider, credentialRefForAccount, defaultCredentialProviderKind, storesPassword } from "./credentials/index.js";
 import { testAccount } from "./mail/imap-client.js";
 import { AccountProfile, CredentialProviderKind } from "./types.js";
 
@@ -59,9 +59,9 @@ account
   .option("--secure <secure>", "Use TLS", "true")
   .option("--email <email>", "Mailbox email address used for round-trip tests")
   .requiredOption("--username <username>")
-  .option("--credential-provider <provider>", "local-keychain, 1password, or env")
-  .option("--credential-ref <ref>", "1Password op:// reference or environment variable name")
-  .option("--password <password>", "Password for local-keychain storage")
+  .option("--credential-provider <provider>", "local-keychain, 1password, env, or dev-sql-vault")
+  .option("--credential-ref <ref>", "1Password op:// reference, environment variable name, or dev SQL vault secret reference")
+  .option("--password <password>", "Password for local-keychain or dev-sql-vault storage")
   .option("--smtp-host <host>", "SMTP host for send/reply actions")
   .option("--smtp-port <port>", "SMTP port")
   .option("--smtp-secure <secure>", "Use implicit TLS for SMTP")
@@ -82,13 +82,14 @@ account
       smtpSecure: options.smtpSecure === undefined ? undefined : options.smtpSecure === "true",
       smtpUsername: options.smtpUsername
     };
+    profile.credentialRef = credentialRefForAccount(profile);
 
-    if (credentialProvider === "local-keychain") {
+    if (storesPassword(credentialProvider)) {
       if (!options.password) {
-        throw new Error("--password is required for local-keychain accounts.");
+        throw new Error(`--password is required for ${credentialProvider} accounts.`);
       }
 
-      await createCredentialProvider("local-keychain").set?.(profile, options.password);
+      await createCredentialProvider(credentialProvider).set?.(profile, options.password);
     }
 
     await upsertAccount(profile);

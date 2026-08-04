@@ -8,7 +8,7 @@ import { requireSubscription, subscriptionStatus } from "../billing/subscription
 import { getAccount, readAccounts, removeAccount, upsertAccount } from "./accounts.js";
 import { readPreferences, updatePreferences } from "./preferences.js";
 import { publicAccount } from "./public-account.js";
-import { createCredentialProvider } from "../credentials/index.js";
+import { createCredentialProvider, credentialRefForAccount, defaultCredentialProviderKind, storesPassword } from "../credentials/index.js";
 import { searchMessages, testAccount, updateMessageFlags } from "../mail/imap-client.js";
 import { sendMessage, testSmtpConnection } from "../mail/smtp-client.js";
 import { AccountProfile } from "../types.js";
@@ -556,13 +556,14 @@ async function saveAccount(rawInput: unknown): Promise<AccountProfile> {
   }
 
   const account = accountFromInput(input);
+  account.credentialRef = credentialRefForAccount(account);
   const existing = (await readAccounts()).find((entry) => entry.id === account.id);
 
-  if (account.credentialProvider === "local-keychain") {
+  if (storesPassword(account.credentialProvider)) {
     if (input.password) {
-      await createCredentialProvider("local-keychain").set?.(account, input.password);
+      await createCredentialProvider(account.credentialProvider).set?.(account, input.password);
     } else if (!existing) {
-      throw new Error("A password is required for a new local-keychain account.");
+      throw new Error(`A password is required for a new ${account.credentialProvider} account.`);
     }
   }
 
@@ -595,7 +596,7 @@ function roundTripSender(account: AccountProfile): string {
 async function testInputAccount(rawInput: unknown) {
   const input = addAccountSchema.parse(rawInput);
   const account = accountFromInput(input);
-  const overridePassword = account.credentialProvider === "local-keychain" ? input.password : undefined;
+  const overridePassword = storesPassword(account.credentialProvider) ? input.password : undefined;
   const paid = (await subscriptionStatus("mail_actions")).live;
   try {
     return {
@@ -706,7 +707,7 @@ async function roundTripInputAccount(rawInput: unknown) {
 
   const input = addAccountSchema.parse(rawInput);
   const account = accountFromInput(input);
-  const overridePassword = account.credentialProvider === "local-keychain" ? input.password : undefined;
+  const overridePassword = storesPassword(account.credentialProvider) ? input.password : undefined;
   try {
     return await roundTripAccount(account, overridePassword);
   } catch (error) {
@@ -903,6 +904,35 @@ function renderSetupPage(token: string): string {
   const tokenJson = JSON.stringify(token);
   const setupVersionJson = JSON.stringify(SETUP_UI_VERSION);
   const processIdJson = JSON.stringify(process.pid);
+  const credentialProvider = defaultCredentialProviderKind();
+  const credentialProviderJson = JSON.stringify(credentialProvider);
+  const credentialStorageLabels: Record<string, { label: string; description: string; infoTitle: string; infoBody: string }> = {
+    "local-keychain": {
+      label: "Local keychain",
+      description: "Stores the mailbox password in your operating system's secure credential store.",
+      infoTitle: "A keychain",
+      infoBody: "IMAP Mailboxes saves the password in Windows Credential Manager or macOS Keychain instead of writing it into the account profile file."
+    },
+    "dev-sql-vault": {
+      label: "Dev SQL vault",
+      description: "Stores local development secrets in SQL Server to emulate Azure Key Vault.",
+      infoTitle: "The dev SQL vault",
+      infoBody: "IMAP Mailboxes stores account metadata and secret values in separate SQL tables so local testing follows the public MCP credential shape."
+    },
+    env: {
+      label: "Environment variable",
+      description: "Reads the mailbox password from the configured environment variable.",
+      infoTitle: "Environment credentials",
+      infoBody: "IMAP Mailboxes stores only the environment variable name in the account profile and resolves the password when a tool runs."
+    },
+    "1password": {
+      label: "1Password",
+      description: "Reads the mailbox password from a configured 1Password item reference.",
+      infoTitle: "1Password credentials",
+      infoBody: "IMAP Mailboxes stores only the 1Password reference in the account profile and resolves the password when a tool runs."
+    }
+  };
+  const credentialStorage = credentialStorageLabels[credentialProvider];
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -1526,7 +1556,7 @@ function renderSetupPage(token: string): string {
         <img src="/assets/imap-plugin-logo-square.png" alt="">
         <div>
           <h1>IMAP Mailboxes</h1>
-          <p class="subhead">Configure mailbox profiles, test login, and keep secrets in your computer's secure credential store.</p>
+          <p class="subhead">Configure mailbox profiles, test login, and keep secrets in the configured credential store.</p>
         </div>
       </div>
       <div class="status">
@@ -1593,14 +1623,14 @@ function renderSetupPage(token: string): string {
           <div class="credential-card span-2">
             <div class="credential-topline">
               <div>
-                <strong>Credential storage: Local keychain</strong>
-                <div class="help-text">V1 stores the mailbox password in your operating system's secure credential store.</div>
+                <strong>Credential storage: ${credentialStorage.label}</strong>
+                <div class="help-text">${credentialStorage.description}</div>
               </div>
               <details class="info">
                 <summary aria-label="What is a keychain?">i</summary>
                 <div class="info-panel">
-                  <p><strong>A keychain</strong> is the secure password vault built into your computer, such as Windows Credential Manager or macOS Keychain.</p>
-                  <p>IMAP Mailboxes saves the password there instead of writing it into the account profile file. Codex receives the secret only when it needs to test or read the mailbox.</p>
+                  <p><strong>${credentialStorage.infoTitle}</strong> is the active credential provider for this MCP server.</p>
+                  <p>${credentialStorage.infoBody} Codex receives the secret only when it needs to test or read the mailbox.</p>
                   <p>Use an app password when your email provider supports one.</p>
                 </div>
               </details>
@@ -1682,6 +1712,7 @@ function renderSetupPage(token: string): string {
     const TOKEN = ${tokenJson};
     const SETUP_UI_VERSION = ${setupVersionJson};
     const SERVER_PID = ${processIdJson};
+    const credentialProvider = ${credentialProviderJson};
     const headers = { "content-type": "application/json", "x-imap-plugin-token": TOKEN };
     const form = document.querySelector("#account-form");
     const message = document.querySelector("#message");
@@ -2039,7 +2070,7 @@ function renderSetupPage(token: string): string {
         port: Number(document.querySelector("#port").value),
         secure: document.querySelector("#secure").checked,
         username: document.querySelector("#username").value.trim() || email,
-        credentialProvider: "local-keychain",
+        credentialProvider,
         password: document.querySelector("#password").value || undefined
       };
       if (paidActions) {
@@ -2049,6 +2080,21 @@ function renderSetupPage(token: string): string {
         payload.smtpUsername = document.querySelector("#smtpUsername").value.trim() || undefined;
       }
       return payload;
+    }
+
+    function credentialProviderLabel(provider) {
+      switch (provider) {
+        case "local-keychain":
+          return "Local keychain";
+        case "dev-sql-vault":
+          return "Dev SQL vault";
+        case "1password":
+          return "1Password";
+        case "env":
+          return "Environment";
+        default:
+          return provider || "Credential provider";
+      }
     }
 
     async function api(path, options = {}) {
@@ -2090,7 +2136,7 @@ function renderSetupPage(token: string): string {
           </div>
         \`;
         item.querySelector("strong").textContent = account.id;
-        item.querySelector(".pill").textContent = "Local keychain";
+        item.querySelector(".pill").textContent = credentialProviderLabel(account.credentialProvider);
         item.querySelector("small").textContent = (account.email || account.username) + " as " + account.username + " at " + account.host + ":" + account.port
           + (account.smtpHost ? " / SMTP " + account.smtpHost + ":" + (account.smtpPort || 587) : "");
         item.querySelector('[data-action="test"]').addEventListener("click", async () => {
@@ -2175,7 +2221,7 @@ function renderSetupPage(token: string): string {
             port: pendingCandidate.port,
             secure: pendingCandidate.secure,
             username,
-            credentialProvider: "local-keychain",
+            credentialProvider,
             password
           })
         });

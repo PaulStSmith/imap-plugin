@@ -1,4 +1,4 @@
-export type CredentialProviderKind = "local-keychain" | "1password" | "env";
+export type CredentialProviderKind = "local-keychain" | "1password" | "env" | "dev-sql-vault";
 
 export interface AccountProfile {
   id: string;
