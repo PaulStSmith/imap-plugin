@@ -21,6 +21,7 @@
     "commands/",
     "dist/",
     "docs/assets/",
+    "docs/billing.js",
     "docs/index.html",
     "docs/privacy.html",
     "docs/styles.css",

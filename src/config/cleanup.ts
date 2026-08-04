@@ -21,7 +21,7 @@ export interface ConfigCleanupResult {
   }>;
 }
 
-const CONFIG_FILE_NAMES = ["accounts.json", "preferences.json", "license.lic"];
+const CONFIG_FILE_NAMES = ["accounts.json", "preferences.json", "installation.json"];
 
 function envCredentialName(account: AccountProfile): string {
   return account.credentialRef ?? `IMAP_PLUGIN_${account.id.toUpperCase().replaceAll("-", "_")}_PASSWORD`;

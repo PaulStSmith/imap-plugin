@@ -14,55 +14,55 @@ This is a greenfield v1 focused on safe read-only access:
 - Inspect attachment metadata.
 - Fetch attachment content as base64 when needed.
 
-SMTP sending is intentionally not exposed yet. The credential and account model is designed so a paid "mail actions" layer can add draft, send, reply, forward, move, and mark-read tools later with explicit confirmation.
+SMTP sending and mailbox actions are gated by a stable IMAP Mailboxes installation ID and by an explicit local SMTP sending preference.
 
-## Paid Feature Gate
+## Installation Entitlement
 
-Paid tools should call the subscription gate before performing mail actions. When a user does not have a live subscription, the plugin returns a structured `subscription_required` response with a payment link.
-
-The no-server production path is a signed ByteForge `.lic` file. Install the license with:
-
-```bash
-imap-plugin license install path\to\license.lic
-```
-
-or from Codex:
+Mail action tools call the entitlement gate before performing sends or mailbox mutations. Each local install creates an `installation.json` file in the plugin config directory with a stable `installationId`. Read it with:
 
 ```text
-/imap-license-install
+imap_installation_status
 ```
 
-Check the installed license with:
+Associate that installation ID with the paid Stripe customer in `dbo.InstallationEntitlements`. The table is created on first entitlement check when `IMAP_PLUGIN_SQL_CONNECTION_STRING` is configured. A live row looks like:
 
-```bash
-imap-plugin license status
+```sql
+MERGE dbo.InstallationEntitlements AS target
+USING (SELECT
+  N'imap_00000000-0000-0000-0000-000000000000' AS InstallationId,
+  N'mail_actions' AS Feature
+) AS source
+ON target.InstallationId = source.InstallationId
+  AND target.Feature = source.Feature
+WHEN MATCHED THEN
+  UPDATE SET
+    Status = N'active',
+    StripeCustomerId = N'cus_...',
+    StripeSubscriptionId = N'sub_...',
+    ValidUntilUtc = NULL,
+    UpdatedAtUtc = SYSUTCDATETIME()
+WHEN NOT MATCHED THEN
+  INSERT (InstallationId, Feature, Status, StripeCustomerId, StripeSubscriptionId, ValidUntilUtc)
+  VALUES (source.InstallationId, source.Feature, N'active', N'cus_...', N'sub_...', NULL);
 ```
 
-The plugin verifies the license signature locally and treats it as live until `validUntil`, plus any `graceUntil` period in the file.
+When the installation ID is not entitled, the plugin returns a structured `subscription_required` response telling the user to register this installation with a paid customer.
 
-Stripe can still be used as a direct entitlement check when a secret key is configured. Create a Stripe Product named `IMAP Mailboxes - Mail Actions`, add a recurring monthly Price, then create a Stripe Payment Link for that Price. Configure the plugin with:
+When a Codex instance tries to use a paid tool, the MCP server returns `subscription_required` with:
 
-```bash
-set IMAP_PLUGIN_STRIPE_SECRET_KEY=sk_live_...
-set IMAP_PLUGIN_STRIPE_PAYMENT_URL=https://buy.stripe.com/...
-set IMAP_PLUGIN_STRIPE_MAIL_ACTIONS_PRICE_ID=price_...
+- `plansUrl`: `https://paulstsmith.github.io/imap-plugin/#plans`
+- `paymentUrl`: the same plans URL, retained for clients that already look for a payment link
+- `installation`: the stable local installation ID to associate after checkout
+
+The plans page can link to Stripe Checkout or Payment Links. Stripe customer and subscription references belong in `dbo.InstallationEntitlements`, not in `web.config` or per-install environment variables.
+
+To make the GitHub Pages pricing button live, create a Stripe Payment Link for the Mail Actions recurring price and paste its public `https://buy.stripe.com/...` URL into `docs/index.html`:
+
+```html
+data-checkout-url="https://buy.stripe.com/5kQ8wQ8689tY9RC5gicIE00"
 ```
 
-To check a user's entitlement against Stripe, provide either their Stripe customer ID or subscription ID:
-
-```bash
-set IMAP_PLUGIN_STRIPE_CUSTOMER_ID=cus_...
-```
-
-or:
-
-```bash
-set IMAP_PLUGIN_STRIPE_MAIL_ACTIONS_SUBSCRIPTION_ID=sub_...
-```
-
-The feature is live when Stripe reports the matching subscription as `active` or `trialing`.
-
-For local development without Stripe, simulate a live subscription with:
+For local development without a DB entitlement, simulate a live subscription with:
 
 ```bash
 set IMAP_PLUGIN_SUBSCRIPTION_STATUS=active
@@ -158,6 +158,7 @@ NODE_ENV=production
 IMAP_PLUGIN_TRANSPORT=http
 IMAP_PLUGIN_CREDENTIAL_PROVIDER=env
 IMAP_PLUGIN_PUBLIC_BASE_URL=https://<app-name>.azurewebsites.net
+IMAP_PLUGIN_SETUP_TOKEN=<strong-random-setup-token>
 ```
 
 Do not use `local-keychain` on a public App Service host. Use environment-backed demo credentials, Azure Key Vault, or a hosted per-user credential flow.
@@ -179,7 +180,13 @@ Then run PowerShell as Administrator and configure the local IIS site:
 .\scripts\setup-local-iis.ps1
 ```
 
-The script copies the runtime files to `C:\inetpub\imap-plugin-mcp`, grants that IIS app pool access to the deployment folder, and points the IIS site there. This avoids granting IIS access to the whole repository under your user profile.
+The script copies the runtime files to `C:\inetpub\imap-plugin-mcp`, grants that IIS app pool access to the deployment folder, points the IIS site there, and writes the configured public base URL into the deployed `web.config`. This avoids granting IIS access to the whole repository under your user profile.
+
+To use a different local binding or setup token:
+
+```powershell
+.\scripts\setup-local-iis.ps1 -Binding "http/*:8090:" -PublicBaseUrl "http://localhost:8090" -SetupToken "local-dev-setup-token"
+```
 
 If `C:\inetpub` is locked down on your machine, choose a different deployment folder:
 
@@ -191,6 +198,7 @@ The default local endpoints are:
 
 ```text
 http://localhost:8088/health
+http://localhost:8088/setup
 http://localhost:8088/mcp
 ```
 
@@ -198,15 +206,20 @@ The checked-in `web.config` starts `node dist/server.js` with:
 
 ```text
 IMAP_PLUGIN_TRANSPORT=http
+IMAP_PLUGIN_PUBLIC_BASE_URL=http://localhost:8088
 IMAP_PLUGIN_ACCOUNT_STORE=sql
 IMAP_PLUGIN_CREDENTIAL_PROVIDER=dev-sql-vault
 ```
+
+The setup script writes `IMAP_PLUGIN_SETUP_TOKEN` into the deployed `web.config`. If no token is provided, it uses `local-dev-setup-token` for local IIS development only.
 
 Set `IMAP_PLUGIN_SQL_CONNECTION_STRING` in the machine, user, or IIS app-pool environment before using the setup page under IIS. For public-MCP work, do not use `local-keychain` under IIS. Use `dev-sql-vault` only for local development and move production credentials to Azure Key Vault.
 
 ## Setup Page
 
-The MCP server starts a localhost setup page when it launches. Ask Codex to call `imap_configure`, then open the returned URL. `imap_open_setup` remains as a compatibility alias.
+In HTTP mode, the MCP server hosts the setup page at `/setup` next to `/mcp`. Ask Codex to call `imap_configure`, then open the returned URL. The URL includes the configured setup token. `imap_open_setup` remains as a compatibility alias.
+
+In stdio mode, the MCP server still starts a temporary localhost setup page for local-only installs.
 
 Users can also invoke the plugin command:
 
@@ -219,11 +232,11 @@ The page supports:
 - Add or update account profiles.
 - Test a connection before saving.
 - Test saved accounts.
-- Run paid SMTP round-trip tests that show the From/To addresses, send to the account's own mailbox address, verify delivery in that account's `INBOX`, and mark the test message read.
-- Remove saved accounts and local keychain secrets.
-- Store credentials in the local operating system keychain.
+- Run SMTP round-trip tests that show the From/To addresses, send to the account's own mailbox address, verify delivery in that account's `INBOX`, and mark the test message read.
+- Remove saved accounts and credential-provider secrets when supported.
+- Store credentials through the configured provider, such as the local keychain for stdio installs or `dev-sql-vault` for local public-MCP development.
 
-By default the setup page binds to `127.0.0.1:37891`. If that port is busy, it falls back to an available local port. You can override the preferred port with:
+For stdio mode only, the setup page binds to `127.0.0.1:37891` by default. If that port is busy, it falls back to an available local port. You can override the preferred port with:
 
 ```bash
 set IMAP_PLUGIN_SETUP_PORT=37900
@@ -237,7 +250,7 @@ When the plugin is uninstalled, Codex should ask the user whether to remove loca
 imap-plugin cleanup --yes
 ```
 
-Cleanup removes saved account profiles, plugin preferences, the installed license file, and local-keychain mailbox secrets. Environment variables and 1Password items cannot be removed safely by the plugin; cleanup reports any referenced names so the user can remove them from their shell, OS profile, or vault.
+Cleanup removes saved account profiles, plugin preferences, the local installation ID, and local-keychain mailbox secrets. Environment variables and 1Password items cannot be removed safely by the plugin; cleanup reports any referenced names so the user can remove them from their shell, OS profile, or vault.
 
 ## Account Setup
 
@@ -284,10 +297,9 @@ imap-plugin account add personal \
 - `imap_list_accounts`
 - `imap_remove_account`
 - `imap_cleanup_config`
+- `imap_installation_status`
 - `imap_subscription_status`
 - `imap_upgrade_subscription`
-- `imap_license_status`
-- `imap_install_license`
 - `imap_test_account`
 - `imap_list_folders`
 - `imap_search_messages`
@@ -298,7 +310,7 @@ imap-plugin account add personal \
 
 ## Search Filters
 
-The free tier includes the full read-only IMAP search suite through `imap_search_messages` and `imap_search_and_read_messages`:
+Read-only IMAP search is available through `imap_search_messages` and `imap_search_and_read_messages`:
 
 - Text fields: `query`, `text`, `subject`, `body`.
 - Address fields: `from`, `to`, `cc`, `bcc`.

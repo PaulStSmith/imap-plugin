@@ -180,6 +180,11 @@ h3 {
   background: #fff;
 }
 
+.button[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
 .section {
   padding: 72px 0;
 }
@@ -230,6 +235,24 @@ article,
   flex-direction: column;
   justify-content: space-between;
   padding: 24px;
+}
+
+.plan-action {
+  width: 100%;
+  margin-top: 22px;
+  border-color: var(--blue);
+  color: var(--blue-2);
+  background: #fff;
+}
+
+.featured .plan-action.primary {
+  color: #fff;
+  background: var(--blue);
+}
+
+.plan-note {
+  margin: 12px 0 0;
+  font-size: 13px;
 }
 
 .plan.featured {

@@ -2,7 +2,11 @@ param(
   [string] $SiteName = "IMAP Plugin MCP",
   [string] $Binding = "http/*:8088:",
   [string] $SourcePath = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
-  [string] $PhysicalPath = $env:IMAP_PLUGIN_IIS_PHYSICAL_PATH
+  [string] $PhysicalPath = $env:IMAP_PLUGIN_IIS_PHYSICAL_PATH,
+  [string] $PublicBaseUrl = $env:IMAP_PLUGIN_PUBLIC_BASE_URL,
+  [string] $SetupToken = $env:IMAP_PLUGIN_SETUP_TOKEN,
+  [string] $SqlConnectionString = $env:IMAP_PLUGIN_SQL_CONNECTION_STRING,
+  [string] $ConfigDir = $env:IMAP_PLUGIN_CONFIG_DIR
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,6 +15,41 @@ if (-not $PhysicalPath) {
   $inetpubPath = Join-Path $env:SystemDrive "inetpub\imap-plugin-mcp"
   $repoDeployPath = Join-Path $SourcePath ".iis-deploy"
   $PhysicalPath = if (Test-Path (Split-Path $inetpubPath -Parent)) { $inetpubPath } else { $repoDeployPath }
+}
+
+if (-not $PublicBaseUrl) {
+  if ($Binding -match "^[^/]+/[^:]*:(\d+):") {
+    $PublicBaseUrl = "http://localhost:$($Matches[1])"
+  } else {
+    $PublicBaseUrl = "http://localhost:8088"
+  }
+}
+
+if (-not $SetupToken) {
+  $SetupToken = "local-dev-setup-token"
+}
+
+$existingSqlConnectionString = $null
+$existingConfigDir = $null
+$existingWebConfigPath = Join-Path $PhysicalPath "web.config"
+if ((-not $SqlConnectionString -or -not $ConfigDir) -and (Test-Path $existingWebConfigPath)) {
+  try {
+    [xml] $existingWebConfig = Get-Content $existingWebConfigPath
+    if (-not $SqlConnectionString) {
+      $existingSqlConnectionString = (
+        $existingWebConfig.SelectNodes("//environmentVariable[@name='IMAP_PLUGIN_SQL_CONNECTION_STRING']") |
+          Select-Object -First 1
+      ).value
+    }
+    if (-not $ConfigDir) {
+      $existingConfigDir = (
+        $existingWebConfig.SelectNodes("//environmentVariable[@name='IMAP_PLUGIN_CONFIG_DIR']") |
+          Select-Object -First 1
+      ).value
+    }
+  } catch {
+    Write-Warning "Could not read existing local plugin settings from $existingWebConfigPath. Continuing without preserving them."
+  }
 }
 
 $appcmd = Join-Path $env:SystemRoot "System32\inetsrv\appcmd.exe"
@@ -93,6 +132,66 @@ Copy-Item -Path (Join-Path $SourcePath "package.json") -Destination $PhysicalPat
 Copy-Item -Path (Join-Path $SourcePath "pnpm-lock.yaml") -Destination $PhysicalPath -Force
 Copy-Item -Path (Join-Path $SourcePath "pnpm-workspace.yaml") -Destination $PhysicalPath -Force
 
+function Set-WebConfigEnvironmentVariable {
+  param(
+    [Parameter(Mandatory = $true)]
+    [xml] $Config,
+    [Parameter(Mandatory = $true)]
+    [string] $Name,
+    [Parameter(Mandatory = $true)]
+    [string] $Value
+  )
+
+  $webServer = $Config.SelectSingleNode("/configuration/system.webServer")
+  if (-not $webServer) {
+    $webServer = $Config.CreateElement("system.webServer")
+    $Config.configuration.AppendChild($webServer) | Out-Null
+  }
+
+  $httpPlatform = $Config.SelectSingleNode("/configuration/system.webServer/httpPlatform")
+  if (-not $httpPlatform) {
+    $httpPlatform = $Config.CreateElement("httpPlatform")
+    $webServer.AppendChild($httpPlatform) | Out-Null
+  }
+
+  $environmentVariables = $Config.SelectSingleNode("/configuration/system.webServer/httpPlatform/environmentVariables")
+  if (-not $environmentVariables) {
+    $environmentVariables = $Config.CreateElement("environmentVariables")
+    $httpPlatform.AppendChild($environmentVariables) | Out-Null
+  }
+
+  $existing = $environmentVariables.environmentVariable | Where-Object { $_.name -eq $Name } | Select-Object -First 1
+  if ($existing) {
+    $existing.value = $Value
+    return
+  }
+
+  $node = $Config.CreateElement("environmentVariable")
+  $nameAttribute = $Config.CreateAttribute("name")
+  $nameAttribute.Value = $Name
+  $valueAttribute = $Config.CreateAttribute("value")
+  $valueAttribute.Value = $Value
+  $node.Attributes.Append($nameAttribute) | Out-Null
+  $node.Attributes.Append($valueAttribute) | Out-Null
+  $environmentVariables.AppendChild($node) | Out-Null
+}
+
+$deployedWebConfigPath = Join-Path $PhysicalPath "web.config"
+[xml] $deployedWebConfig = Get-Content $deployedWebConfigPath
+Set-WebConfigEnvironmentVariable -Config $deployedWebConfig -Name "IMAP_PLUGIN_PUBLIC_BASE_URL" -Value $PublicBaseUrl
+Set-WebConfigEnvironmentVariable -Config $deployedWebConfig -Name "IMAP_PLUGIN_SETUP_TOKEN" -Value $SetupToken
+if ($SqlConnectionString) {
+  Set-WebConfigEnvironmentVariable -Config $deployedWebConfig -Name "IMAP_PLUGIN_SQL_CONNECTION_STRING" -Value $SqlConnectionString
+} elseif ($existingSqlConnectionString) {
+  Set-WebConfigEnvironmentVariable -Config $deployedWebConfig -Name "IMAP_PLUGIN_SQL_CONNECTION_STRING" -Value $existingSqlConnectionString
+}
+if ($ConfigDir) {
+  Set-WebConfigEnvironmentVariable -Config $deployedWebConfig -Name "IMAP_PLUGIN_CONFIG_DIR" -Value $ConfigDir
+} elseif ($existingConfigDir) {
+  Set-WebConfigEnvironmentVariable -Config $deployedWebConfig -Name "IMAP_PLUGIN_CONFIG_DIR" -Value $existingConfigDir
+}
+$deployedWebConfig.Save($deployedWebConfigPath)
+
 $distExit = robocopy (Join-Path $SourcePath "dist") (Join-Path $PhysicalPath "dist") /MIR /NFL /NDL /NJH /NJS /NP
 if ($LASTEXITCODE -gt 7) {
   throw "Failed to copy dist to $PhysicalPath."
@@ -165,5 +264,6 @@ if (-not ($handlersConfig -match 'name="httpPlatformHandler"')) {
 
 Write-Host "IIS site is configured."
 Write-Host "Physical path: $PhysicalPath"
-Write-Host "Health check: http://localhost:8088/health"
-Write-Host "MCP endpoint:  http://localhost:8088/mcp"
+Write-Host "Health check: $PublicBaseUrl/health"
+Write-Host "Setup page:   $PublicBaseUrl/setup"
+Write-Host "MCP endpoint: $PublicBaseUrl/mcp"

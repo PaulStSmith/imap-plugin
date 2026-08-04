@@ -78,10 +78,6 @@ export const paidFeatureSchema = z.object({
   feature: z.enum(["mail_actions"]).default("mail_actions")
 });
 
-export const licenseInstallSchema = z.object({
-  path: z.string().min(1).describe("Local path to the ByteForge .lic file.")
-});
-
 const uidActionSchema = mailboxSchema.extend({
   uids: z.array(z.number().int().positive()).min(1).max(100)
 });
@@ -142,7 +138,7 @@ export const replyMessageSchema = readMessageSchema.merge(smtpOverrideSchema).ex
 });
 
 export const preferencesSchema = z.object({
-  smtpActionsEnabled: z.boolean().describe("Allow subscriber-only SMTP send, reply, and round-trip actions.")
+  smtpActionsEnabled: z.boolean().describe("Allow entitled SMTP send, reply, and round-trip actions.")
 });
 
 export const cleanupConfigSchema = z.object({

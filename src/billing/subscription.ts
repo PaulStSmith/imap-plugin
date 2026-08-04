@@ -1,4 +1,6 @@
-import { licenseStatus } from "./license.js";
+import { readOrCreateInstallation } from "../config/installation.js";
+import { hasSqlConnectionString } from "../config/sql.js";
+import { readInstallationEntitlement } from "./installation-entitlements.js";
 
 export type PaidFeature = "mail_actions";
 
@@ -6,21 +8,16 @@ export interface SubscriptionStatus {
   feature: PaidFeature;
   live: boolean;
   status: string;
+  plansUrl: string;
   paymentUrl: string;
-  provider: "license" | "stripe" | "env";
-  license?: {
-    installed: boolean;
-    state: string;
-    licenseId?: string;
-    validUntil?: string;
-    graceUntil?: string;
-    path: string;
-  };
-  stripe?: {
-    configured: boolean;
+  provider: "installation" | "env";
+  installation?: {
+    installationId: string;
+    productId: string;
+    createdAt: string;
     customerId?: string;
     subscriptionId?: string;
-    priceId?: string;
+    validUntil?: string;
   };
   error?: string;
 }
@@ -32,30 +29,17 @@ export interface SubscriptionRequired {
   feature: PaidFeature;
   action: string;
   message: string;
+  installation: {
+    installationId: string;
+    productId: string;
+    createdAt: string;
+  };
+  plansUrl: string;
   paymentUrl: string;
 }
 
-const DEFAULT_PAYMENT_URL = "https://paulstsmith.github.io/imap-plugin/#plans";
+const DEFAULT_PLANS_URL = "https://paulstsmith.github.io/imap-plugin/#plans";
 const LIVE_SUBSCRIPTION_STATUSES = new Set(["active", "trialing"]);
-const STRIPE_API_BASE_URL = "https://api.stripe.com/v1";
-
-interface StripeSubscriptionItem {
-  price?: {
-    id?: string;
-  };
-}
-
-interface StripeSubscription {
-  id: string;
-  status: string;
-  items?: {
-    data?: StripeSubscriptionItem[];
-  };
-}
-
-interface StripeListResponse<T> {
-  data?: T[];
-}
 
 function envValue(...names: string[]): string | undefined {
   for (const name of names) {
@@ -68,68 +52,53 @@ function envValue(...names: string[]): string | undefined {
   return undefined;
 }
 
-function featureEnvKey(feature: PaidFeature): string {
-  return feature.toUpperCase();
-}
+async function installationStatus(feature: PaidFeature): Promise<SubscriptionStatus> {
+  const installation = await readOrCreateInstallation();
+  if (!hasSqlConnectionString()) {
+    return {
+      feature,
+      live: false,
+      status: "entitlement_db_not_configured",
+      plansUrl: plansUrl(),
+      paymentUrl: plansUrl(),
+      provider: "installation",
+      installation: {
+        installationId: installation.installationId,
+        productId: installation.productId,
+        createdAt: installation.createdAt
+      }
+    };
+  }
 
-function stripeSecretKey(): string | undefined {
-  return envValue("IMAP_PLUGIN_STRIPE_SECRET_KEY", "STRIPE_SECRET_KEY");
-}
+  const entitlement = await readInstallationEntitlement(installation.installationId, feature);
+  const status = entitlement?.status.toLowerCase() || "none";
+  const validUntil = entitlement?.validUntil ? Date.parse(entitlement.validUntil) : undefined;
+  const live = LIVE_SUBSCRIPTION_STATUSES.has(status) && (!validUntil || validUntil > Date.now());
 
-function stripeCustomerId(): string | undefined {
-  return envValue("IMAP_PLUGIN_STRIPE_CUSTOMER_ID", "STRIPE_CUSTOMER_ID");
-}
-
-function stripeSubscriptionId(feature: PaidFeature): string | undefined {
-  const key = featureEnvKey(feature);
-  return envValue(`IMAP_PLUGIN_STRIPE_${key}_SUBSCRIPTION_ID`, "IMAP_PLUGIN_STRIPE_SUBSCRIPTION_ID", "STRIPE_SUBSCRIPTION_ID");
-}
-
-function stripePriceId(feature: PaidFeature): string | undefined {
-  const key = featureEnvKey(feature);
-  return envValue(`IMAP_PLUGIN_STRIPE_${key}_PRICE_ID`, "IMAP_PLUGIN_STRIPE_PRICE_ID", "STRIPE_PRICE_ID");
-}
-
-function stripeConfig(feature: PaidFeature) {
   return {
-    secretKey: stripeSecretKey(),
-    customerId: stripeCustomerId(),
-    subscriptionId: stripeSubscriptionId(feature),
-    priceId: stripePriceId(feature)
+    feature,
+    live,
+    status: live ? status : status === "none" ? "installation_not_entitled" : status,
+    plansUrl: plansUrl(),
+    paymentUrl: plansUrl(),
+    provider: "installation",
+    installation: {
+      installationId: installation.installationId,
+      productId: installation.productId,
+      createdAt: installation.createdAt,
+      customerId: entitlement?.customerId,
+      subscriptionId: entitlement?.subscriptionId,
+      validUntil: entitlement?.validUntil
+    }
   };
 }
 
-async function stripeGet<T>(secretKey: string, path: string, params?: URLSearchParams): Promise<T> {
-  const url = new URL(`${STRIPE_API_BASE_URL}${path}`);
-
-  if (params) {
-    url.search = params.toString();
-  }
-
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${secretKey}`
-    }
-  });
-  const body = (await response.json()) as { error?: { message?: string } };
-
-  if (!response.ok) {
-    throw new Error(body.error?.message || `Stripe request failed with status ${response.status}.`);
-  }
-
-  return body as T;
-}
-
-function matchesFeature(subscription: StripeSubscription, priceId?: string): boolean {
-  if (!priceId) {
-    return true;
-  }
-
-  return subscription.items?.data?.some((item) => item.price?.id === priceId) ?? false;
+export function plansUrl(): string {
+  return envValue("IMAP_PLUGIN_PLANS_URL") || DEFAULT_PLANS_URL;
 }
 
 export function paymentUrl(): string {
-  return envValue("IMAP_PLUGIN_STRIPE_PAYMENT_URL", "IMAP_PLUGIN_PAYMENT_URL", "STRIPE_PAYMENT_URL") || DEFAULT_PAYMENT_URL;
+  return plansUrl();
 }
 
 function envSubscriptionStatus(feature: PaidFeature): SubscriptionStatus {
@@ -139,121 +108,33 @@ function envSubscriptionStatus(feature: PaidFeature): SubscriptionStatus {
     feature,
     live: LIVE_SUBSCRIPTION_STATUSES.has(status),
     status,
-    paymentUrl: paymentUrl(),
+    plansUrl: plansUrl(),
+    paymentUrl: plansUrl(),
     provider: "env"
   };
 }
 
 export async function subscriptionStatus(feature: PaidFeature): Promise<SubscriptionStatus> {
-  const localLicense = await licenseStatus();
-  if (localLicense.installed) {
-    return {
-      feature,
-      live: localLicense.live,
-      status: localLicense.state,
-      paymentUrl: paymentUrl(),
-      provider: "license",
-      license: {
-        installed: localLicense.installed,
-        state: localLicense.state,
-        licenseId: localLicense.license?.licenseId,
-        validUntil: localLicense.license?.validUntil,
-        graceUntil: localLicense.license?.graceUntil,
-        path: localLicense.path
-      },
-      error: localLicense.reason
-    };
+  const installation = await installationStatus(feature);
+  if (installation.live || envValue("IMAP_PLUGIN_ENTITLEMENT_PROVIDER") === "installation") {
+    return installation;
   }
 
-  const config = stripeConfig(feature);
-
-  if (!config.secretKey) {
-    return envSubscriptionStatus(feature);
-  }
-
-  const stripeMetadata = {
-    configured: Boolean(config.customerId || config.subscriptionId),
-    customerId: config.customerId,
-    subscriptionId: config.subscriptionId,
-    priceId: config.priceId
-  };
-
-  try {
-    if (config.subscriptionId) {
-      const subscription = await stripeGet<StripeSubscription>(
-        config.secretKey,
-        `/subscriptions/${encodeURIComponent(config.subscriptionId)}`,
-        new URLSearchParams([["expand[]", "items.data.price"]])
-      );
-      const status = matchesFeature(subscription, config.priceId) ? subscription.status.toLowerCase() : "price_mismatch";
-
-      return {
-        feature,
-        live: LIVE_SUBSCRIPTION_STATUSES.has(status),
-        status,
-        paymentUrl: paymentUrl(),
-        provider: "stripe",
-        stripe: stripeMetadata
-      };
-    }
-
-    if (config.customerId) {
-      const subscriptions = await stripeGet<StripeListResponse<StripeSubscription>>(
-        config.secretKey,
-        "/subscriptions",
-        new URLSearchParams([
-          ["customer", config.customerId],
-          ["status", "all"],
-          ["limit", "100"],
-          ["expand[]", "data.items.data.price"]
-        ])
-      );
-      const matchingSubscription = subscriptions.data?.find((subscription) => matchesFeature(subscription, config.priceId));
-      const status = matchingSubscription?.status.toLowerCase() || "none";
-
-      return {
-        feature,
-        live: LIVE_SUBSCRIPTION_STATUSES.has(status),
-        status,
-        paymentUrl: paymentUrl(),
-        provider: "stripe",
-        stripe: {
-          ...stripeMetadata,
-          subscriptionId: matchingSubscription?.id || config.subscriptionId
-        }
-      };
-    }
-
-    return {
-      feature,
-      live: false,
-      status: "stripe_not_configured",
-      paymentUrl: paymentUrl(),
-      provider: "stripe",
-      stripe: stripeMetadata
-    };
-  } catch (error) {
-    return {
-      feature,
-      live: false,
-      status: "stripe_error",
-      paymentUrl: paymentUrl(),
-      provider: "stripe",
-      stripe: stripeMetadata,
-      error: error instanceof Error ? error.message : "Unknown Stripe error."
-    };
-  }
+  return envSubscriptionStatus(feature);
 }
 
-export function subscriptionRequired(feature: PaidFeature, action: string): SubscriptionRequired {
+export async function subscriptionRequired(feature: PaidFeature, action: string): Promise<SubscriptionRequired> {
+  const installation = await readOrCreateInstallation();
   return {
     ok: false,
     code: "subscription_required",
     requiresSubscription: true,
     feature,
     action,
-    message: `${action} requires an active IMAP Mailboxes subscription. Use the payment link to upgrade, then try again.`,
-    paymentUrl: paymentUrl()
+    message: `${action} requires a Mail Actions subscription. Open the plans page, choose a plan, then register this installation ID after checkout.`,
+    installation,
+    plansUrl: plansUrl(),
+    paymentUrl: plansUrl()
   };
 }
 

@@ -21,9 +21,12 @@ export interface SetupServerInfo {
   token: string;
 }
 
-const SETUP_UI_VERSION = "20260803.1845";
+const SETUP_UI_VERSION = "20260804.1040";
+const DISCOVERY_DNS_TIMEOUT_MS = 3500;
+const DISCOVERY_LOOKUP_TIMEOUT_MS = 2500;
 
 let setupServerPromise: Promise<SetupServerInfo> | undefined;
+let setupTokenValue: string | undefined;
 
 interface DiscoveryInput {
   email: string;
@@ -56,6 +59,31 @@ function sendJson(response: ServerResponse, status: number, value: unknown): voi
     "cache-control": "no-store"
   });
   response.end(JSON.stringify(value, null, 2));
+}
+
+function setupToken(): string {
+  setupTokenValue ??= process.env.IMAP_PLUGIN_SETUP_TOKEN ?? randomBytes(24).toString("base64url");
+  return setupTokenValue;
+}
+
+function httpPort(): number {
+  return Number(process.env.IMAP_PLUGIN_HTTP_PORT || process.env.PORT || process.env.HTTP_PLATFORM_PORT || "3000");
+}
+
+function publicBaseUrl(): string {
+  return (process.env.IMAP_PLUGIN_PUBLIC_BASE_URL ?? `http://localhost:${httpPort()}`).replace(/\/+$/, "");
+}
+
+function hostedSetupInfo(token: string): SetupServerInfo {
+  const baseUrl = publicBaseUrl();
+  const parsed = new URL(baseUrl);
+  const port = parsed.port ? Number(parsed.port) : parsed.protocol === "https:" ? 443 : 80;
+  return {
+    host: parsed.hostname,
+    port,
+    token,
+    url: `${baseUrl}/setup?token=${encodeURIComponent(token)}&v=${encodeURIComponent(SETUP_UI_VERSION)}`
+  };
 }
 
 function stringProperty(value: unknown, key: string): string | undefined {
@@ -264,6 +292,27 @@ async function fetchAutoconfig(url: string): Promise<string | null> {
   }
 }
 
+function withTimeout<T>(promise: Promise<T>, milliseconds: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      const error = new Error(`${label} timed out after ${milliseconds}ms.`);
+      (error as NodeJS.ErrnoException).code = "DISCOVERY_TIMEOUT";
+      reject(error);
+    }, milliseconds);
+
+    promise.then(
+      (value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      }
+    );
+  });
+}
+
 function addAutoconfigCandidates(
   candidates: DiscoveryCandidate[],
   xml: string,
@@ -420,7 +469,7 @@ function addProviderCandidates(
 
 async function markResolvable(candidate: DiscoveryCandidate): Promise<DiscoveryCandidate> {
   try {
-    await lookup(candidate.host);
+    await withTimeout(lookup(candidate.host), DISCOVERY_LOOKUP_TIMEOUT_MS, `DNS lookup for ${candidate.host}`);
     return { ...candidate, resolves: true };
   } catch {
     return { ...candidate, resolves: false };
@@ -433,9 +482,9 @@ async function discoverMailboxSettings(rawInput: unknown): Promise<DiscoveryResu
   const candidates: DiscoveryCandidate[] = [];
 
   const [mxResult, imapsSrvResult, imapSrvResult, autoconfigResult, wellKnownAutoconfigResult] = await Promise.allSettled([
-    resolveMx(domain),
-    resolveSrv(`_imaps._tcp.${domain}`),
-    resolveSrv(`_imap._tcp.${domain}`),
+    withTimeout(resolveMx(domain), DISCOVERY_DNS_TIMEOUT_MS, `MX lookup for ${domain}`),
+    withTimeout(resolveSrv(`_imaps._tcp.${domain}`), DISCOVERY_DNS_TIMEOUT_MS, `IMAPS SRV lookup for ${domain}`),
+    withTimeout(resolveSrv(`_imap._tcp.${domain}`), DISCOVERY_DNS_TIMEOUT_MS, `IMAP SRV lookup for ${domain}`),
     fetchAutoconfig(`https://autoconfig.${domain}/mail/config-v1.1.xml?emailaddress=${encodeURIComponent(email)}`),
     fetchAutoconfig(`https://${domain}/.well-known/autoconfig/mail/config-v1.1.xml?emailaddress=${encodeURIComponent(email)}`)
   ]);
@@ -508,6 +557,11 @@ async function sendAsset(response: ServerResponse, path: string, contentType: st
 }
 
 function readJson(request: IncomingMessage): Promise<unknown> {
+  const parsedBody = (request as IncomingMessage & { body?: unknown }).body;
+  if (parsedBody !== undefined) {
+    return Promise.resolve(parsedBody);
+  }
+
   return new Promise((resolve, reject) => {
     let body = "";
     request.setEncoding("utf8");
@@ -760,7 +814,7 @@ async function handleRequest(
     return;
   }
 
-  if (url.pathname === "/" && request.method === "GET") {
+  if ((url.pathname === "/" || url.pathname === "/setup") && request.method === "GET") {
     sendHtml(response, renderSetupPage(token));
     return;
   }
@@ -882,7 +936,7 @@ function listenOnPort(port: number, token: string): Promise<SetupServerInfo> {
 export async function startSetupServer(): Promise<SetupServerInfo> {
   if (!setupServerPromise) {
     setupServerPromise = (async () => {
-      const token = process.env.IMAP_PLUGIN_SETUP_TOKEN ?? randomBytes(24).toString("base64url");
+      const token = setupToken();
       const preferredPort = Number(process.env.IMAP_PLUGIN_SETUP_PORT ?? "37891");
 
       try {
@@ -898,6 +952,19 @@ export async function startSetupServer(): Promise<SetupServerInfo> {
   }
 
   return setupServerPromise;
+}
+
+export async function setupPageInfo(): Promise<SetupServerInfo> {
+  const token = setupToken();
+  if (process.env.IMAP_PLUGIN_TRANSPORT === "http") {
+    return hostedSetupInfo(token);
+  }
+
+  return startSetupServer();
+}
+
+export async function handleHostedSetupRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  await handleRequest(request, response, setupToken());
 }
 
 function renderSetupPage(token: string): string {
@@ -1561,7 +1628,7 @@ function renderSetupPage(token: string): string {
       </div>
       <div class="status">
         <strong>Setup UI ${SETUP_UI_VERSION}</strong>
-        <span id="status">Local setup server ready</span>
+        <span id="status">Setup server ready</span>
         <button class="compact" type="button" id="reload-page">Reload</button>
       </div>
     </header>
@@ -1572,7 +1639,7 @@ function renderSetupPage(token: string): string {
         <div class="switch-row paid-only">
           <div>
             <strong>SMTP sending</strong>
-            <div class="help-text">Allow paid tools to send, reply, and run round-trip email tests.</div>
+            <div class="help-text">Allow entitled tools to send, reply, and run round-trip email tests.</div>
           </div>
           <label class="inline">
             <input id="smtpActionsEnabled" type="checkbox">
@@ -1755,7 +1822,7 @@ function renderSetupPage(token: string): string {
         message.appendChild(details);
       }
 
-      statusEl.textContent = text || "Local setup server ready";
+      statusEl.textContent = text || "Setup server ready";
     }
 
     function setModalMessage(text, kind = "", details = null) {
@@ -1931,15 +1998,29 @@ function renderSetupPage(token: string): string {
     }
 
     function formatClientFailure(error) {
+      if (error && error.name === "AbortError") {
+        return {
+          error: "The setup request timed out. Try again, or enter the provider settings manually if DNS discovery is slow.",
+          diagnostic: {
+            category: "timeout",
+            originalMessage: error.message,
+            suggestions: [
+              "Check VPN, firewall, and DNS restrictions.",
+              "Enter the provider's IMAP host and port manually if detection keeps timing out."
+            ]
+          }
+        };
+      }
+
       if (error instanceof TypeError) {
         return {
-          error: "The setup page could not reach the local plugin server. Reload the page and reopen the setup URL if needed.",
+          error: "The setup page could not reach the MCP server. Reload the page and reopen the setup URL if needed.",
           diagnostic: {
             category: "setup-server",
             originalMessage: error.message,
             suggestions: [
               "Click Reload on this page.",
-              "Ask Codex to open the IMAP setup page again if the local server stopped."
+              "Ask Codex to open the IMAP setup page again if the server restarted."
             ]
           }
         };
@@ -2098,7 +2179,15 @@ function renderSetupPage(token: string): string {
     }
 
     async function api(path, options = {}) {
-      const response = await fetch(path, { ...options, headers: { ...headers, ...(options.headers || {}) } });
+      const { timeoutMs, ...fetchOptions } = options;
+      const controller = timeoutMs ? new AbortController() : null;
+      const timeout = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
+      try {
+        const response = await fetch(path, {
+          ...fetchOptions,
+          signal: controller ? controller.signal : fetchOptions.signal,
+          headers: { ...headers, ...(fetchOptions.headers || {}) }
+        });
       const contentType = response.headers.get("content-type") || "";
       const payload = contentType.includes("application/json")
         ? await response.json()
@@ -2109,6 +2198,11 @@ function renderSetupPage(token: string): string {
         throw error;
       }
       return payload;
+      } finally {
+        if (timeout) {
+          clearTimeout(timeout);
+        }
+      }
     }
 
     async function loadAccounts() {
@@ -2194,7 +2288,7 @@ function renderSetupPage(token: string): string {
       setMessage("Detecting settings...");
       discoveryEl.textContent = "";
       try {
-        const result = await api("/api/discover", { method: "POST", body: JSON.stringify({ email }) });
+        const result = await api("/api/discover", { method: "POST", body: JSON.stringify({ email }), timeoutMs: 15000 });
         renderDiscovery(result);
         setMessage(result.candidates.length ? "Settings detected. Test a candidate to apply it." : "No settings were detected.", result.candidates.length ? "ok" : "warn");
       } catch (error) {

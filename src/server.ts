@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
-import { startSetupServer } from "./config/setup-server.js";
+import { handleHostedSetupRequest, startSetupServer } from "./config/setup-server.js";
 import { registerTools } from "./tools/register.js";
 
 const SERVER_VERSION = "0.5.0-beta.0";
@@ -43,6 +43,34 @@ async function startHttpServer(): Promise<void> {
       version: SERVER_VERSION,
       transport: "streamable-http"
     });
+  });
+
+  app.get("/", async (request: HttpRequest, response: HttpResponse) => {
+    await handleHostedSetupRequest(request, response);
+  });
+
+  app.get("/setup", async (request: HttpRequest, response: HttpResponse) => {
+    await handleHostedSetupRequest(request, response);
+  });
+
+  app.get("/assets/imap-plugin-logo-square.png", async (request: HttpRequest, response: HttpResponse) => {
+    await handleHostedSetupRequest(request, response);
+  });
+
+  app.options("/api/{*path}", async (request: HttpRequest, response: HttpResponse) => {
+    await handleHostedSetupRequest(request, response);
+  });
+
+  app.get("/api/{*path}", async (request: HttpRequest, response: HttpResponse) => {
+    await handleHostedSetupRequest(request, response);
+  });
+
+  app.post("/api/{*path}", async (request: HttpRequest, response: HttpResponse) => {
+    await handleHostedSetupRequest(request, response);
+  });
+
+  app.delete("/api/{*path}", async (request: HttpRequest, response: HttpResponse) => {
+    await handleHostedSetupRequest(request, response);
   });
 
   app.post("/mcp", async (request: HttpRequest, response: HttpResponse) => {

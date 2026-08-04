@@ -1,5 +1,4 @@
 import { Command } from "commander";
-import { importLicenseFile, licenseStatus } from "./billing/license.js";
 import { cleanupConfig } from "./config/cleanup.js";
 import { getAccount, readAccounts, removeAccount, upsertAccount } from "./config/accounts.js";
 import { createCredentialProvider, credentialRefForAccount, defaultCredentialProviderKind, storesPassword } from "./credentials/index.js";
@@ -14,7 +13,6 @@ program
   .version("0.1.0");
 
 const account = program.command("account").description("Manage account profiles.");
-const license = program.command("license").description("Manage the local ByteForge license file.");
 
 program
   .command("cleanup")
@@ -26,21 +24,6 @@ program
     }
 
     console.log(JSON.stringify(await cleanupConfig(), null, 2));
-  });
-
-license
-  .command("status")
-  .description("Check the installed license file.")
-  .action(async () => {
-    console.log(JSON.stringify({ license: await licenseStatus() }, null, 2));
-  });
-
-license
-  .command("install")
-  .argument("<path>", "Path to the ByteForge .lic file.")
-  .description("Verify and install a ByteForge .lic file.")
-  .action(async (path: string) => {
-    console.log(JSON.stringify({ license: await importLicenseFile(path) }, null, 2));
   });
 
 account

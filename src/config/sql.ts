@@ -2,6 +2,10 @@ import sql from "mssql";
 
 let poolPromise: Promise<sql.ConnectionPool> | undefined;
 
+export function hasSqlConnectionString(): boolean {
+  return Boolean(process.env.IMAP_PLUGIN_SQL_CONNECTION_STRING?.trim());
+}
+
 export function sqlConnectionString(): string {
   const value = process.env.IMAP_PLUGIN_SQL_CONNECTION_STRING;
   if (!value) {

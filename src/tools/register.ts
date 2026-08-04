@@ -1,11 +1,11 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { importLicenseFile, licenseStatus } from "../billing/license.js";
 import { requireSubscription, subscriptionRequired, subscriptionStatus } from "../billing/subscription.js";
 import { cleanupConfig } from "../config/cleanup.js";
 import { getAccount, readAccounts, removeAccount, upsertAccount } from "../config/accounts.js";
+import { readOrCreateInstallation } from "../config/installation.js";
 import { readPreferences, updatePreferences } from "../config/preferences.js";
 import { publicAccount } from "../config/public-account.js";
-import { startSetupServer } from "../config/setup-server.js";
+import { setupPageInfo } from "../config/setup-server.js";
 import { createCredentialProvider, credentialRefForAccount, storesPassword } from "../credentials/index.js";
 import {
   appendMessage,
@@ -35,7 +35,6 @@ import {
   addAccountSchema,
   mailboxSchema,
   paidFeatureSchema,
-  licenseInstallSchema,
   appendMessageSchema,
   folderPathSchema,
   messageColorSchema,
@@ -65,7 +64,7 @@ function jsonResponse(value: unknown) {
 }
 
 async function setupPageResponse() {
-  const setup = await startSetupServer();
+  const setup = await setupPageInfo();
   return jsonResponse({
     url: setup.url,
     host: setup.host,
@@ -92,11 +91,11 @@ async function requireSmtpSendingEnabled() {
 }
 
 export function registerTools(server: McpServer): void {
-  server.tool("imap_open_setup", "Get the local setup page URL for configuring and testing IMAP accounts.", {}, async () => {
+  server.tool("imap_open_setup", "Get the setup page URL for configuring and testing IMAP accounts.", {}, async () => {
     return setupPageResponse();
   });
 
-  server.tool("imap_configure", "Open the local configuration page to add, test, edit, or reconfigure IMAP accounts.", {}, async () => {
+  server.tool("imap_configure", "Open the configuration page to add, test, edit, or reconfigure IMAP accounts.", {}, async () => {
     return setupPageResponse();
   });
 
@@ -130,30 +129,26 @@ export function registerTools(server: McpServer): void {
     return jsonResponse({ accounts: accounts.map(publicAccount) });
   });
 
-  server.tool("imap_subscription_status", "Check whether a paid IMAP Mailboxes feature has an active subscription.", paidFeatureSchema.shape, async (input) => {
+  server.tool("imap_subscription_status", "Check whether an installed IMAP Mailboxes plugin feature is enabled.", paidFeatureSchema.shape, async (input) => {
     return jsonResponse({ subscription: await subscriptionStatus(input.feature) });
   });
 
-  server.tool("imap_license_status", "Check the installed ByteForge license file for this IMAP Plugin.", {}, async () => {
-    return jsonResponse({ license: await licenseStatus() });
+  server.tool("imap_installation_status", "Read this IMAP Mailboxes installation's stable local entitlement identifier.", {}, async () => {
+    return jsonResponse({ installation: await readOrCreateInstallation() });
   });
 
-  server.tool("imap_install_license", "Install a local ByteForge .lic license file for this IMAP Plugin.", licenseInstallSchema.shape, async (input) => {
-    return jsonResponse({ license: await importLicenseFile(input.path) });
+  server.tool("imap_upgrade_subscription", "Get entitlement guidance for an IMAP Mailboxes feature.", paidFeatureSchema.shape, async (input) => {
+    return jsonResponse(await subscriptionRequired(input.feature, "Mail actions"));
   });
 
-  server.tool("imap_upgrade_subscription", "Get the payment link for a paid IMAP Mailboxes feature.", paidFeatureSchema.shape, async (input) => {
-    return jsonResponse(subscriptionRequired(input.feature, "Paid mail actions"));
-  });
-
-  server.tool("imap_preferences", "Read local IMAP Plugin preferences, including subscriber-only action switches.", {}, async () => {
+  server.tool("imap_preferences", "Read local IMAP Plugin preferences, including paid action switches.", {}, async () => {
     return jsonResponse({
       subscription: await subscriptionStatus("mail_actions"),
       preferences: await readPreferences()
     });
   });
 
-  server.tool("imap_update_preferences", "Update local IMAP Plugin preferences. SMTP sending can only be enabled by paid subscribers.", preferencesSchema.shape, async (input) => {
+  server.tool("imap_update_preferences", "Update local IMAP Plugin preferences. SMTP sending can only be enabled when the installation entitlement is active.", preferencesSchema.shape, async (input) => {
     if (input.smtpActionsEnabled) {
       const required = await paidAction("Enable SMTP sending");
       if (required) return jsonResponse(required);
@@ -218,7 +213,7 @@ export function registerTools(server: McpServer): void {
     return jsonResponse({ folder: folder ?? null });
   });
 
-  server.tool("imap_send_message", "Send an email through the account SMTP server. Requires a paid license.", sendMessageSchema.shape, async (input) => {
+  server.tool("imap_send_message", "Send an email through the account SMTP server. Requires installation entitlement.", sendMessageSchema.shape, async (input) => {
     const required = await paidAction("Send email");
     if (required) return jsonResponse(required);
     const disabled = await requireSmtpSendingEnabled();
@@ -226,7 +221,7 @@ export function registerTools(server: McpServer): void {
     return jsonResponse({ sent: await sendMessage(await getAccount(input.accountId), input) });
   });
 
-  server.tool("imap_reply_message", "Reply to an IMAP message through SMTP. Requires a paid license.", replyMessageSchema.shape, async (input) => {
+  server.tool("imap_reply_message", "Reply to an IMAP message through SMTP. Requires installation entitlement.", replyMessageSchema.shape, async (input) => {
     const required = await paidAction("Reply to email");
     if (required) return jsonResponse(required);
     const disabled = await requireSmtpSendingEnabled();
@@ -234,67 +229,67 @@ export function registerTools(server: McpServer): void {
     return jsonResponse({ sent: await replyToMessage(await getAccount(input.accountId), input) });
   });
 
-  server.tool("imap_update_message_flags", "Add, remove, or set IMAP flags on messages. Requires a paid license.", messageFlagSchema.shape, async (input) => {
+  server.tool("imap_update_message_flags", "Add, remove, or set IMAP flags on messages. Requires installation entitlement.", messageFlagSchema.shape, async (input) => {
     const required = await paidAction("Update message flags");
     if (required) return jsonResponse(required);
     return jsonResponse(await updateMessageFlags(await getAccount(input.accountId), input));
   });
 
-  server.tool("imap_set_message_color", "Set a provider-supported color flag on messages. Requires a paid license.", messageColorSchema.shape, async (input) => {
+  server.tool("imap_set_message_color", "Set a provider-supported color flag on messages. Requires installation entitlement.", messageColorSchema.shape, async (input) => {
     const required = await paidAction("Set message color");
     if (required) return jsonResponse(required);
     return jsonResponse(await setMessageColor(await getAccount(input.accountId), input));
   });
 
-  server.tool("imap_copy_messages", "Copy messages to another mailbox. Requires a paid license.", moveMessagesSchema.shape, async (input) => {
+  server.tool("imap_copy_messages", "Copy messages to another mailbox. Requires installation entitlement.", moveMessagesSchema.shape, async (input) => {
     const required = await paidAction("Copy messages");
     if (required) return jsonResponse(required);
     return jsonResponse(await copyMessages(await getAccount(input.accountId), input));
   });
 
-  server.tool("imap_move_messages", "Move messages to another mailbox. Requires a paid license.", moveMessagesSchema.shape, async (input) => {
+  server.tool("imap_move_messages", "Move messages to another mailbox. Requires installation entitlement.", moveMessagesSchema.shape, async (input) => {
     const required = await paidAction("Move messages");
     if (required) return jsonResponse(required);
     return jsonResponse(await moveMessages(await getAccount(input.accountId), input));
   });
 
-  server.tool("imap_delete_messages", "Permanently delete messages from a mailbox. Requires a paid license.", readMessagesSchema.shape, async (input) => {
+  server.tool("imap_delete_messages", "Permanently delete messages from a mailbox. Requires installation entitlement.", readMessagesSchema.shape, async (input) => {
     const required = await paidAction("Delete messages");
     if (required) return jsonResponse(required);
     return jsonResponse(await deleteMessages(await getAccount(input.accountId), input));
   });
 
-  server.tool("imap_append_message", "Append a raw RFC 822 message to a mailbox. Requires a paid license.", appendMessageSchema.shape, async (input) => {
+  server.tool("imap_append_message", "Append a raw RFC 822 message to a mailbox. Requires installation entitlement.", appendMessageSchema.shape, async (input) => {
     const required = await paidAction("Append message");
     if (required) return jsonResponse(required);
     return jsonResponse(await appendMessage(await getAccount(input.accountId), input));
   });
 
-  server.tool("imap_create_folder", "Create an IMAP mailbox/folder. Requires a paid license.", folderPathSchema.shape, async (input) => {
+  server.tool("imap_create_folder", "Create an IMAP mailbox/folder. Requires installation entitlement.", folderPathSchema.shape, async (input) => {
     const required = await paidAction("Create folder");
     if (required) return jsonResponse(required);
     return jsonResponse(await createFolder(await getAccount(input.accountId), input.path));
   });
 
-  server.tool("imap_rename_folder", "Rename an IMAP mailbox/folder. Requires a paid license.", renameFolderSchema.shape, async (input) => {
+  server.tool("imap_rename_folder", "Rename an IMAP mailbox/folder. Requires installation entitlement.", renameFolderSchema.shape, async (input) => {
     const required = await paidAction("Rename folder");
     if (required) return jsonResponse(required);
     return jsonResponse(await renameFolder(await getAccount(input.accountId), input.path, input.newPath));
   });
 
-  server.tool("imap_delete_folder", "Delete an IMAP mailbox/folder. Requires a paid license.", folderPathSchema.shape, async (input) => {
+  server.tool("imap_delete_folder", "Delete an IMAP mailbox/folder. Requires installation entitlement.", folderPathSchema.shape, async (input) => {
     const required = await paidAction("Delete folder");
     if (required) return jsonResponse(required);
     return jsonResponse(await deleteFolder(await getAccount(input.accountId), input.path));
   });
 
-  server.tool("imap_subscribe_folder", "Subscribe to an IMAP mailbox/folder. Requires a paid license.", folderPathSchema.shape, async (input) => {
+  server.tool("imap_subscribe_folder", "Subscribe to an IMAP mailbox/folder. Requires installation entitlement.", folderPathSchema.shape, async (input) => {
     const required = await paidAction("Subscribe folder");
     if (required) return jsonResponse(required);
     return jsonResponse(await subscribeFolder(await getAccount(input.accountId), input.path));
   });
 
-  server.tool("imap_unsubscribe_folder", "Unsubscribe from an IMAP mailbox/folder. Requires a paid license.", folderPathSchema.shape, async (input) => {
+  server.tool("imap_unsubscribe_folder", "Unsubscribe from an IMAP mailbox/folder. Requires installation entitlement.", folderPathSchema.shape, async (input) => {
     const required = await paidAction("Unsubscribe folder");
     if (required) return jsonResponse(required);
     return jsonResponse(await unsubscribeFolder(await getAccount(input.accountId), input.path));

@@ -1,9 +1,0 @@
-{
-  "keyId": "byteforge-license-ed25519-2026-08-03",
-  "company": "ByteForge Ltd.",
-  "algorithm": "Ed25519",
-  "usage": "license-signature-verification",
-  "publicKeyPemFile": "byteforge-license-public-key.pem",
-  "publicKeySha256Fingerprint": "f0:c0:df:ce:ef:87:df:04:43:ea:ab:21:72:60:90:ae:f9:34:e1:01:6d:f8:79:b7:cb:07:27:5e:10:23:8c:e9",
-  "generatedAt": "2026-08-03T19:34:24.957Z"
-}

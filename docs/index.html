@@ -92,6 +92,7 @@
             <li>Summarize inboxes and threads</li>
             <li>Extract tasks and attachment metadata</li>
           </ul>
+          <a class="button plan-action" href="#setup">Configure free access</a>
         </article>
 
         <article class="plan featured">
@@ -108,6 +109,13 @@
             <li>Move, archive, and mark messages</li>
             <li>Multiple mailboxes</li>
           </ul>
+          <a
+            class="button primary plan-action"
+            id="mail-actions-checkout"
+            href="#plans"
+            data-checkout-url="https://buy.stripe.com/5kQ8wQ8689tY9RC5gicIE00"
+          >Subscribe to Mail Actions</a>
+          <p class="plan-note">After checkout, register your plugin installation ID to unlock paid actions.</p>
         </article>
 
         <article class="plan">
@@ -123,6 +131,7 @@
             <li>Audit-friendly mail actions</li>
             <li>Priority support</li>
           </ul>
+          <a class="button plan-action" href="#setup">Use Mail Actions first</a>
         </article>
       </div>
     </section>
@@ -137,7 +146,7 @@
         <li>Click Try now and run <code>/imap-configure</code>. You can also ask Codex: <code>Open the IMAP plugin setup page</code>.</li>
         <li>Add your IMAP host, port, username, TLS setting, and credential provider.</li>
         <li>Use Test connection before saving the mailbox profile.</li>
-        <li>For paid SMTP checks, use Round-trip to review From/To, send only to that account's mailbox address, verify the message in its INBOX, and mark it read.</li>
+        <li>For SMTP checks, use Round-trip to review From/To, send only to that account's mailbox address, verify the message in its INBOX, and mark it read.</li>
       </ol>
     </section>
 
@@ -158,5 +167,6 @@
     <span>IMAP Mailboxes Beta for Codex</span>
     <a href="#setup">Setup instructions</a>
   </footer>
+  <script src="./billing.js"></script>
 </body>
 </html>
