@@ -5,3 +5,5 @@ dist/
 coverage/
 secrets/
 .tmp-license-test/
+logs/
+.iis-deploy/
