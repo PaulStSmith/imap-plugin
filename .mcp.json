@@ -1,13 +1,8 @@
 {
   "mcpServers": {
     "imap-plugin": {
-      "command": "node",
-      "args": [
-        "dist/server.js"
-      ],
-      "env": {
-        "IMAP_PLUGIN_CREDENTIAL_PROVIDER": "local-keychain"
-      }
+      "type": "http",
+      "url": "http://localhost:8088/mcp"
     }
   }
 }

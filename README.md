@@ -89,8 +89,49 @@ Set `IMAP_PLUGIN_CREDENTIAL_PROVIDER` to choose a provider:
 - `local-keychain`: stores passwords in the OS credential store through `keytar`.
 - `1password`: reads passwords from 1Password using `op read`.
 - `env`: reads passwords from environment variables for development.
+- `dev-sql-vault`: stores development secrets in SQL Server to emulate Azure Key Vault locally.
 
 The default provider is `local-keychain`.
+
+## Account Store
+
+By default, account profiles are stored in the local `accounts.json` config file. For public-MCP development, store account profile metadata in SQL Server instead:
+
+```powershell
+$env:IMAP_PLUGIN_ACCOUNT_STORE = "sql"
+$env:IMAP_PLUGIN_SQL_CONNECTION_STRING = 'Data Source=127.0.0.1,14333;Initial Catalog=imap-mailboxes;User ID=codex;Password=<dev-password>;Pooling=False;Encrypt=False;TrustServerCertificate=False;Application Name="IMAP Plugin Dev";Command Timeout=30'
+```
+
+The SQL store creates `dbo.AccountProfiles` on first use. It stores account metadata and credential references only; mailbox passwords are still resolved through the configured credential provider.
+
+To emulate Azure Key Vault locally, combine the SQL account store with the SQL-backed dev vault:
+
+```powershell
+$env:IMAP_PLUGIN_ACCOUNT_STORE = "sql"
+$env:IMAP_PLUGIN_CREDENTIAL_PROVIDER = "dev-sql-vault"
+$env:IMAP_PLUGIN_SQL_CONNECTION_STRING = 'Data Source=127.0.0.1,14333;Initial Catalog=imap-mailboxes;User ID=codex;Password=<dev-password>;Pooling=False;Encrypt=False;TrustServerCertificate=False;Application Name="IMAP Plugin Dev";Command Timeout=30'
+```
+
+The dev vault creates `dbo.DevVaultSecrets` on first use. Account rows store references like:
+
+```text
+dev-kv://imap-{user-guid}-{account-guid}
+```
+
+The secret value is stored separately as JSON in `dbo.DevVaultSecrets`, matching the future Azure Key Vault shape while keeping local development self-contained.
+
+For local SQL Express, enable TCP only on loopback before using the SQL store:
+
+```powershell
+Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL17.SQLEXPRESS\MSSQLServer\SuperSocketNetLib\Tcp' -Name Enabled -Value 1
+Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL17.SQLEXPRESS\MSSQLServer\SuperSocketNetLib\Tcp' -Name ListenOnAllIPs -Value 0
+Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL17.SQLEXPRESS\MSSQLServer\SuperSocketNetLib\Tcp\IP16' -Name Enabled -Value 1
+Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL17.SQLEXPRESS\MSSQLServer\SuperSocketNetLib\Tcp\IP16' -Name TcpDynamicPorts -Value ''
+Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL17.SQLEXPRESS\MSSQLServer\SuperSocketNetLib\Tcp\IP16' -Name TcpPort -Value '14333'
+Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL17.SQLEXPRESS\MSSQLServer\SuperSocketNetLib\Tcp\IPAll' -Name TcpDynamicPorts -Value ''
+Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL17.SQLEXPRESS\MSSQLServer\SuperSocketNetLib\Tcp\IPAll' -Name TcpPort -Value ''
+Restart-Service -Name 'MSSQL$SQLEXPRESS' -Force
+```
 
 ## Development
 
@@ -99,6 +140,69 @@ npm install
 npm run build
 npm start
 ```
+
+## Hosted MCP on Azure
+
+Local Codex installs use stdio by default. For Azure App Service or another public host, run the same server in Streamable HTTP mode:
+
+```bash
+set IMAP_PLUGIN_TRANSPORT=http
+set IMAP_PLUGIN_CREDENTIAL_PROVIDER=env
+npm start
+```
+
+The HTTP server listens on `process.env.PORT`, exposes `GET /health`, and serves the MCP endpoint at `POST /mcp`. In Azure App Service, configure:
+
+```bash
+NODE_ENV=production
+IMAP_PLUGIN_TRANSPORT=http
+IMAP_PLUGIN_CREDENTIAL_PROVIDER=env
+IMAP_PLUGIN_PUBLIC_BASE_URL=https://<app-name>.azurewebsites.net
+```
+
+Do not use `local-keychain` on a public App Service host. Use environment-backed demo credentials, Azure Key Vault, or a hosted per-user credential flow.
+
+## Local IIS Development Host
+
+For public MCP development on Windows, IIS can host the HTTP MCP server through HttpPlatformHandler. Install IIS, Node.js 20 or newer, and IIS HttpPlatformHandler first.
+
+Build the server:
+
+```powershell
+npm install
+npm run build
+```
+
+Then run PowerShell as Administrator and configure the local IIS site:
+
+```powershell
+.\scripts\setup-local-iis.ps1
+```
+
+The script copies the runtime files to `C:\inetpub\imap-plugin-mcp`, grants that IIS app pool access to the deployment folder, and points the IIS site there. This avoids granting IIS access to the whole repository under your user profile.
+
+If `C:\inetpub` is locked down on your machine, choose a different deployment folder:
+
+```powershell
+.\scripts\setup-local-iis.ps1 -PhysicalPath "C:\Users\pauls\source\repos\IMAP Plugin\.iis-deploy"
+```
+
+The default local endpoints are:
+
+```text
+http://localhost:8088/health
+http://localhost:8088/mcp
+```
+
+The checked-in `web.config` starts `node dist/server.js` with:
+
+```text
+IMAP_PLUGIN_TRANSPORT=http
+IMAP_PLUGIN_ACCOUNT_STORE=sql
+IMAP_PLUGIN_CREDENTIAL_PROVIDER=dev-sql-vault
+```
+
+Set `IMAP_PLUGIN_SQL_CONNECTION_STRING` in the machine, user, or IIS app-pool environment before using the setup page under IIS. For public-MCP work, do not use `local-keychain` under IIS. Use `dev-sql-vault` only for local development and move production credentials to Azure Key Vault.
 
 ## Setup Page
 
