@@ -78,6 +78,10 @@ export const paidFeatureSchema = z.object({
   feature: z.enum(["mail_actions"]).default("mail_actions")
 });
 
+export const activateSubscriptionSchema = paidFeatureSchema.extend({
+  subscriptionId: z.string().min(1).regex(/^sub_[a-zA-Z0-9]+$/).describe("Stripe subscription ID returned after checkout, for example sub_123.")
+});
+
 const uidActionSchema = mailboxSchema.extend({
   uids: z.array(z.number().int().positive()).min(1).max(100)
 });

@@ -52,14 +52,28 @@ When a Codex instance tries to use a paid tool, the MCP server returns `subscrip
 
 - `plansUrl`: `https://paulstsmith.github.io/imap-plugin/#plans`
 - `paymentUrl`: the same plans URL, retained for clients that already look for a payment link
-- `installation`: the stable local installation ID to associate after checkout
+- activation guidance telling the user to subscribe, then give the Stripe subscription ID back to Codex
 
-The plans page can link to Stripe Checkout or Payment Links. Stripe customer and subscription references belong in `dbo.InstallationEntitlements`, not in `web.config` or per-install environment variables.
+The plans page links to Stripe Checkout through a Payment Link. After checkout, the user gives their Stripe subscription ID to Codex. Codex calls:
+
+```text
+imap_activate_subscription({"subscriptionId":"sub_..."})
+```
+
+The MCP server validates the subscription with Stripe, reads the local installation ID, and writes the entitlement to `dbo.InstallationEntitlements`. Stripe customer and subscription references belong in `dbo.InstallationEntitlements`, not in `web.config` or per-install environment variables.
+
+For automatic renewal and cancellation updates, configure Stripe to send subscription webhooks to:
+
+```text
+https://<public-mcp-host>/stripe/webhook
+```
+
+Store the webhook signing secret as `IMAP_PLUGIN_STRIPE_WEBHOOK_SECRET` in the MCP host environment. The webhook updates an existing installation entitlement by Stripe subscription ID; the initial installation binding still happens through `imap_activate_subscription`.
 
 To make the GitHub Pages pricing button live, create a Stripe Payment Link for the Mail Actions recurring price and paste its public `https://buy.stripe.com/...` URL into `docs/index.html`:
 
 ```html
-data-checkout-url="https://buy.stripe.com/5kQ8wQ8689tY9RC5gicIE00"
+data-checkout-url="https://buy.stripe.com/fZu28s1HK7lQ4xicIKcIE01"
 ```
 
 For local development without a DB entitlement, simulate a live subscription with:
@@ -298,8 +312,9 @@ imap-plugin account add personal \
 - `imap_remove_account`
 - `imap_cleanup_config`
 - `imap_installation_status`
-- `imap_subscription_status`
 - `imap_upgrade_subscription`
+- `imap_activate_subscription`
+- `imap_subscription_status`
 - `imap_test_account`
 - `imap_list_folders`
 - `imap_search_messages`

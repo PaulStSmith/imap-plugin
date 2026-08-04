@@ -1,9 +1,10 @@
 import { IncomingMessage, ServerResponse } from "node:http";
+import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 import { handleHostedSetupRequest, startSetupServer } from "./config/setup-server.js";
+import { handleStripeWebhookRequest } from "./billing/stripe-webhook.js";
 import { registerTools } from "./tools/register.js";
 
 const SERVER_VERSION = "0.5.0-beta.0";
@@ -33,8 +34,15 @@ async function startStdioServer(): Promise<void> {
 }
 
 async function startHttpServer(): Promise<void> {
-  const app = createMcpExpressApp({ host: "0.0.0.0" });
+  const app = express();
   const port = Number(process.env.HTTP_PLATFORM_PORT || process.env.PORT || process.env.IMAP_PLUGIN_HTTP_PORT || DEFAULT_HTTP_PORT);
+
+  app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (request: HttpRequest, response: HttpResponse) => {
+    const result = await handleStripeWebhookRequest(request);
+    response.status(result.ok ? 200 : 400).json(result);
+  });
+
+  app.use(express.json());
 
   app.get("/health", (_request: HttpRequest, response: HttpResponse) => {
     response.status(200).json({

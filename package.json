@@ -33,6 +33,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.3",
     "commander": "^12.1.0",
+    "express": "^5.2.1",
     "html-to-text": "^9.0.5",
     "imapflow": "^1.0.191",
     "keytar": "^7.9.0",
@@ -42,6 +43,7 @@
     "zod-to-json-schema": "^3.25.1"
   },
   "devDependencies": {
+    "@types/express": "^5.0.0",
     "@types/html-to-text": "^9.0.4",
     "@types/mailparser": "^3.4.6",
     "@types/mssql": "^12.3.0",

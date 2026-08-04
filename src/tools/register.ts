@@ -1,5 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { requireSubscription, subscriptionRequired, subscriptionStatus } from "../billing/subscription.js";
+import { activateSubscription, requireSubscription, subscriptionRequired, subscriptionStatus } from "../billing/subscription.js";
 import { cleanupConfig } from "../config/cleanup.js";
 import { getAccount, readAccounts, removeAccount, upsertAccount } from "../config/accounts.js";
 import { readOrCreateInstallation } from "../config/installation.js";
@@ -32,6 +32,7 @@ import { replyToMessage, sendMessage } from "../mail/smtp-client.js";
 import { AccountProfile } from "../types.js";
 import {
   accountIdSchema,
+  activateSubscriptionSchema,
   addAccountSchema,
   mailboxSchema,
   paidFeatureSchema,
@@ -139,6 +140,10 @@ export function registerTools(server: McpServer): void {
 
   server.tool("imap_upgrade_subscription", "Get entitlement guidance for an IMAP Mailboxes feature.", paidFeatureSchema.shape, async (input) => {
     return jsonResponse(await subscriptionRequired(input.feature, "Mail actions"));
+  });
+
+  server.tool("imap_activate_subscription", "Activate a paid Stripe subscription for this IMAP Mailboxes installation.", activateSubscriptionSchema.shape, async (input) => {
+    return jsonResponse(await activateSubscription(input.feature, input.subscriptionId));
   });
 
   server.tool("imap_preferences", "Read local IMAP Plugin preferences, including paid action switches.", {}, async () => {

@@ -82,3 +82,59 @@ WHERE InstallationId = @installationId
 
   return result.recordset[0] ? fromRow(result.recordset[0]) : undefined;
 }
+
+export async function readInstallationEntitlementBySubscription(
+  subscriptionId: string,
+  feature: PaidFeature
+): Promise<InstallationEntitlement | undefined> {
+  await ensureSchema();
+  const connection = await sqlPool();
+  const result = await connection.request()
+    .input("subscriptionId", sql.NVarChar(128), subscriptionId)
+    .input("feature", sql.NVarChar(64), feature)
+    .query<EntitlementRow>(`
+SELECT
+  InstallationId AS installationId,
+  Feature AS feature,
+  Status AS status,
+  StripeCustomerId AS customerId,
+  StripeSubscriptionId AS subscriptionId,
+  ValidUntilUtc AS validUntilUtc
+FROM dbo.InstallationEntitlements
+WHERE StripeSubscriptionId = @subscriptionId
+  AND Feature = @feature;
+`);
+
+  return result.recordset[0] ? fromRow(result.recordset[0]) : undefined;
+}
+
+export async function upsertInstallationEntitlement(entitlement: InstallationEntitlement): Promise<InstallationEntitlement> {
+  await ensureSchema();
+  const connection = await sqlPool();
+  const validUntil = entitlement.validUntil ? new Date(entitlement.validUntil) : null;
+  await connection.request()
+    .input("installationId", sql.NVarChar(96), entitlement.installationId)
+    .input("feature", sql.NVarChar(64), entitlement.feature)
+    .input("status", sql.NVarChar(32), entitlement.status)
+    .input("customerId", sql.NVarChar(128), entitlement.customerId ?? null)
+    .input("subscriptionId", sql.NVarChar(128), entitlement.subscriptionId ?? null)
+    .input("validUntilUtc", sql.DateTime2(3), validUntil)
+    .query(`
+MERGE dbo.InstallationEntitlements AS target
+USING (SELECT @installationId AS InstallationId, @feature AS Feature) AS source
+ON target.InstallationId = source.InstallationId
+  AND target.Feature = source.Feature
+WHEN MATCHED THEN
+  UPDATE SET
+    Status = @status,
+    StripeCustomerId = @customerId,
+    StripeSubscriptionId = @subscriptionId,
+    ValidUntilUtc = @validUntilUtc,
+    UpdatedAtUtc = SYSUTCDATETIME()
+WHEN NOT MATCHED THEN
+  INSERT (InstallationId, Feature, Status, StripeCustomerId, StripeSubscriptionId, ValidUntilUtc)
+  VALUES (@installationId, @feature, @status, @customerId, @subscriptionId, @validUntilUtc);
+`);
+
+  return entitlement;
+}
