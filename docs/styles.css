@@ -114,25 +114,12 @@ footer {
   z-index: 2;
 }
 
-.hero-mark {
-  width: min(100%, 520px);
-  aspect-ratio: 1;
-  display: grid;
-  place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 28px;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.18), transparent 36%),
-    linear-gradient(135deg, var(--blue), var(--blue-2));
+.hero-logo {
+  width: 100%;
+  max-height: min(620px, 66vh);
+  object-fit: contain;
   justify-self: end;
   filter: drop-shadow(0 24px 44px rgba(0, 0, 0, 0.34));
-}
-
-.hero-mark span {
-  color: #fff;
-  font-size: clamp(96px, 16vw, 188px);
-  font-weight: 900;
-  line-height: 1;
 }
 
 .eyebrow {
@@ -368,8 +355,9 @@ footer {
     padding: 44px 0 52px;
   }
 
-  .hero-mark {
+  .hero-logo {
     width: min(100%, 520px);
+    max-height: 36vh;
     align-self: center;
   }
 
