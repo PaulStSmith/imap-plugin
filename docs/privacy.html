@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Privacy Policy - IMAP Mailboxes</title>
-  <meta name="description" content="Privacy policy for IMAP Mailboxes for Codex.">
+  <meta name="description" content="Privacy policy for IMAP Mailboxes.">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
@@ -27,24 +27,25 @@
         <p class="eyebrow">Privacy</p>
         <h1>Privacy Policy</h1>
       </div>
-      <p>IMAP Mailboxes is designed around local-first mailbox access for Codex.</p>
+      <p>IMAP Mailboxes is designed around explicit mailbox access for OpenAI surfaces that support remote MCP tools.</p>
       <h2>Current platform scope</h2>
-      <p>IMAP Mailboxes is currently a Codex-exclusive plugin. It is not currently offered as a general ChatGPT GPT, Claude integration, hosted mailbox service, or shared remote MCP service.</p>
-      <p>Support for other assistant platforms, including Claude, may be considered later if technically and commercially appropriate, but it is not part of the current roadmap.</p>
+      <p>IMAP Mailboxes is a hosted MCP plugin for Codex and compatible GPTs. Claude, Gemini, and other non-OpenAI assistant systems are outside the project scope; any use there is at your own risk.</p>
+      <p>Support for other assistant platforms may be considered later if technically and commercially appropriate, but it is not part of the current roadmap.</p>
       <h2>Mailbox credentials</h2>
-      <p>V1 stores mailbox passwords safely in the local operating system keychain. On Windows, this means Windows Credential Manager. On macOS, this means macOS Keychain. Account profile files do not store raw passwords.</p>
-      <p>The plugin keeps credential storage on the user's computer through the local keychain provider. Environment-variable and 1Password-backed accounts can be configured for development or advanced workflows, but the default setup page uses local keychain storage.</p>
+      <p>Account metadata is stored separately from mailbox credentials. Hosted public installs may store mailbox credentials behind server-side credential boundaries; local stdio installs can still use the operating system keychain for local-only testing.</p>
+      <p>ByteForge personnel do not have access to user mailbox credentials in any usable shape or form. Operational access is designed around configuration and diagnostics, not reading passwords or private email.</p>
+      <p>Environment-variable and 1Password-backed accounts can be configured for development or advanced workflows. Raw mailbox passwords should not be pasted into chat.</p>
       <h2>Email content</h2>
       <p>The plugin reads mailbox content only when you ask Codex to use a configured account. The plugin does not log mailbox passwords or message bodies.</p>
       <h2>Hosted services</h2>
-      <p>The current plugin does not operate a hosted mailbox sync service. If hosted features are added later, this policy will be updated before those features are released.</p>
+      <p>The hosted MCP endpoint does not operate a background mailbox sync service. It reads mailbox content only when Codex or a compatible GPT invokes plugin tools for a configured account.</p>
       <h2>Contact</h2>
       <p>For now, privacy questions can be handled through the plugin distribution channel where you received access.</p>
     </section>
   </main>
 
   <footer>
-    <span>IMAP Mailboxes for Codex</span>
+    <span>IMAP Mailboxes</span>
     <a href="./terms.html">Terms of Service</a>
   </footer>
 </body>

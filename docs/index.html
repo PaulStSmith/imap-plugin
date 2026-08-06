@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>IMAP Mailboxes Beta for Codex</title>
-  <meta name="description" content="Universal IMAP mailbox access for Codex, starting with safe read-only email search and message reading.">
+  <title>IMAP Mailboxes Beta</title>
+  <meta name="description" content="Universal IMAP mailbox access for Codex and compatible GPTs, starting with safe read-only email search and message reading.">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
@@ -25,19 +25,20 @@
     <section class="hero">
       <div class="hero-inner">
         <div class="hero-copy-block">
-          <p class="eyebrow">Universal mailbox access for Codex</p>
+          <p class="eyebrow">Universal mailbox access for Codex and compatible GPTs</p>
           <h1>IMAP Mailboxes Beta</h1>
           <p class="hero-copy">
             Bring generic IMAP email accounts into Codex without waiting for a provider-specific connector.
-            Start with safe read-only search, summaries, and message reading; unlock send and mailbox actions later.
-            This is a Codex-exclusive plugin, not a general ChatGPT GPT or hosted mailbox service.
+            Start with safe read-only search, summaries, and message reading; unlock send and mailbox actions when you need them.
+            This is a hosted MCP plugin for OpenAI surfaces that support remote MCP tools, not a background mailbox sync service.
+            Use with non-OpenAI assistant systems is outside the project scope and at your own risk.
           </p>
           <div class="hero-actions">
             <a class="button primary" href="#setup">Configure in Codex</a>
             <a class="button" href="#plans">See pricing</a>
           </div>
         </div>
-        <img class="hero-logo" src="./assets/imap-plugin-logo.png" alt="IMAP Plugin for Codex logo">
+        <img class="hero-logo" src="./assets/imap-plugin-logo.png" alt="IMAP Mailboxes logo">
       </div>
     </section>
 
@@ -57,7 +58,7 @@
         </article>
         <article>
           <h3>Credential choice</h3>
-          <p>Use local keychain storage by default, or resolve secrets from 1Password or environment variables for multi-machine workflows.</p>
+          <p>Use the hosted setup flow for public installs, with account metadata stored separately from mailbox credentials.</p>
         </article>
       </div>
     </section>
@@ -142,7 +143,7 @@
         <h2>Configure from the plugin page.</h2>
       </div>
       <ol>
-        <li>Install IMAP Mailboxes from the Personal plugin marketplace.</li>
+        <li>Install IMAP Mailboxes from the plugin marketplace.</li>
         <li>Click Try now and run <code>/imap-configure</code>. You can also ask Codex: <code>Open the IMAP plugin setup page</code>.</li>
         <li>Add your IMAP host, port, username, TLS setting, and credential provider.</li>
         <li>Use Test connection before saving the mailbox profile.</li>
@@ -156,15 +157,15 @@
         <h2>Private beta today. Public distribution next.</h2>
       </div>
       <p>
-        IMAP Mailboxes is currently being developed as a private Codex plugin. The public website explains the product direction
-        while the plugin is tested, hardened, and prepared for broader Codex distribution. It is not currently offered for ChatGPT GPTs,
-        Claude, or other non-Codex assistant surfaces.
+        IMAP Mailboxes is available as a hosted MCP beta backed by a public endpoint. The plugin is being hardened for broader
+        distribution across OpenAI surfaces that support remote MCP tools. Claude, Gemini, and other non-OpenAI assistant systems
+        are outside the project scope; any use there is at your own risk.
       </p>
     </section>
   </main>
 
   <footer>
-    <span>IMAP Mailboxes Beta for Codex</span>
+    <span>IMAP Mailboxes Beta</span>
     <a href="#setup">Setup instructions</a>
   </footer>
   <script src="./billing.js"></script>

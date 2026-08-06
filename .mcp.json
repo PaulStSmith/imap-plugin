@@ -2,7 +2,7 @@
   "mcpServers": {
     "imap-plugin": {
       "type": "http",
-      "url": "http://localhost:8088/mcp"
+      "url": "https://imap-mcp-server-d7fcffbkcdcdgqdw.canadacentral-01.azurewebsites.net/mcp"
     }
   }
 }

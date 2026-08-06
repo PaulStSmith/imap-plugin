@@ -2,7 +2,7 @@
 
 Connect Codex to generic IMAP mailboxes through an MCP server.
 
-IMAP Mailboxes is a Codex-exclusive plugin. It is not a general ChatGPT GPT, hosted mailbox service, or non-Codex assistant integration.
+IMAP Mailboxes is a hosted MCP plugin for Codex and compatible GPTs. It is not a background mailbox sync service. Use with Claude, Gemini, or other non-OpenAI assistant systems is outside the project scope and is at your own risk.
 
 This is a greenfield v1 focused on safe read-only access:
 
@@ -179,7 +179,22 @@ IMAP_PLUGIN_PUBLIC_BASE_URL=https://<app-name>.azurewebsites.net
 IMAP_PLUGIN_SETUP_TOKEN=<strong-random-setup-token>
 ```
 
+Before deployment, verify the App Service settings locally or in the Kudu/SSH console:
+
+```bash
+npm run azure:check-env
+```
+
+For a SQL-backed public setup, also set:
+
+```bash
+IMAP_PLUGIN_ACCOUNT_STORE=sql
+IMAP_PLUGIN_SQL_CONNECTION_STRING=<azure-sql-connection-string>
+```
+
 Do not use `local-keychain` on a public App Service host. Use environment-backed demo credentials, Azure Key Vault, or a hosted per-user credential flow.
+
+The checked-in `web.config` is intentionally production-safe: it starts `node .\dist\server.js`, sets `NODE_ENV=production`, and enables `IMAP_PLUGIN_TRANSPORT=http`. Keep secrets, the public base URL, SQL connection strings, and credential-provider choices in Azure App Service application settings.
 
 ## Local IIS Development Host
 
@@ -220,16 +235,17 @@ http://localhost:8088/setup
 http://localhost:8088/mcp
 ```
 
-The checked-in `web.config` starts `node dist/server.js` with:
+The local IIS setup script starts from the production-safe `web.config`, then writes local-only development settings into the deployed copy:
 
 ```text
+NODE_ENV=development
 IMAP_PLUGIN_TRANSPORT=http
 IMAP_PLUGIN_PUBLIC_BASE_URL=http://localhost:8088
 IMAP_PLUGIN_ACCOUNT_STORE=sql
 IMAP_PLUGIN_CREDENTIAL_PROVIDER=dev-sql-vault
 ```
 
-The setup script writes `IMAP_PLUGIN_SETUP_TOKEN` into the deployed `web.config`. If no token is provided, it uses `local-dev-setup-token` for local IIS development only.
+The setup script also writes `IMAP_PLUGIN_SETUP_TOKEN` into the deployed `web.config`. If no token is provided, it uses `local-dev-setup-token` for local IIS development only.
 
 Set `IMAP_PLUGIN_SQL_CONNECTION_STRING` in the machine, user, or IIS app-pool environment before using the setup page under IIS. For public-MCP work, do not use `local-keychain` under IIS. Use `dev-sql-vault` only for local development and move production credentials to Azure Key Vault.
 

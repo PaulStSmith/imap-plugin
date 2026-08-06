@@ -1,12 +1,13 @@
 {
   "name": "imap-plugin",
   "version": "0.5.0-beta.0",
-  "description": "Codex-exclusive plugin for generic IMAP mailboxes with read tools and paid mail actions.",
+  "description": "Hosted MCP plugin for generic IMAP mailboxes with read tools and paid mail actions.",
   "author": {
     "name": "Paulo Santos"
   },
   "license": "MIT",
   "homepage": "https://paulstsmith.github.io/imap-plugin/",
+  "repository": "https://github.com/PaulStSmith/imap-plugin",
   "keywords": [
     "imap",
     "email",
@@ -16,8 +17,8 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "IMAP Mailboxes Beta",
-    "shortDescription": "Read IMAP mailboxes and enable paid mail actions from Codex beta.",
-    "longDescription": "Codex-exclusive plugin for connecting generic IMAP mailboxes to Codex. It supports folder listing, message search, message reading, attachment access, and subscriber-controlled SMTP/IMAP mail actions without requiring a provider-specific mail connector. It is not a ChatGPT GPT, hosted mailbox service, or non-Codex assistant integration.",
+    "shortDescription": "Read IMAP mailboxes and enable paid mail actions from Codex or compatible GPTs.",
+    "longDescription": "Hosted MCP plugin for connecting generic IMAP mailboxes to Codex and compatible GPTs through a public MCP endpoint. It supports folder listing, message search, message reading, attachment access, and subscriber-controlled SMTP/IMAP mail actions without requiring a provider-specific mail connector. It is not a background mailbox sync service. Non-OpenAI assistant use is outside the project scope and is at the user's own risk.",
     "developerName": "Paulo Santos",
     "category": "Productivity",
     "capabilities": [
