@@ -4,6 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { handleHostedSetupRequest, startSetupServer } from "./config/setup-server.js";
+import { checkSqlHealth } from "./config/sql.js";
 import { handleStripeWebhookRequest } from "./billing/stripe-webhook.js";
 import { registerTools } from "./tools/register.js";
 
@@ -44,12 +45,18 @@ async function startHttpServer(): Promise<void> {
 
   app.use(express.json());
 
-  app.get("/health", (_request: HttpRequest, response: HttpResponse) => {
-    response.status(200).json({
-      ok: true,
+  app.get("/health", async (_request: HttpRequest, response: HttpResponse) => {
+    const sql = await checkSqlHealth();
+    const ok = !sql.configured || sql.ok;
+
+    response.status(ok ? 200 : 503).json({
+      ok,
       name: "imap-plugin",
       version: SERVER_VERSION,
-      transport: "streamable-http"
+      transport: "streamable-http",
+      dependencies: {
+        sql
+      }
     });
   });
 

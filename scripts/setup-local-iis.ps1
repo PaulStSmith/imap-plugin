@@ -178,8 +178,11 @@ function Set-WebConfigEnvironmentVariable {
 
 $deployedWebConfigPath = Join-Path $PhysicalPath "web.config"
 [xml] $deployedWebConfig = Get-Content $deployedWebConfigPath
+Set-WebConfigEnvironmentVariable -Config $deployedWebConfig -Name "NODE_ENV" -Value "development"
 Set-WebConfigEnvironmentVariable -Config $deployedWebConfig -Name "IMAP_PLUGIN_PUBLIC_BASE_URL" -Value $PublicBaseUrl
 Set-WebConfigEnvironmentVariable -Config $deployedWebConfig -Name "IMAP_PLUGIN_SETUP_TOKEN" -Value $SetupToken
+Set-WebConfigEnvironmentVariable -Config $deployedWebConfig -Name "IMAP_PLUGIN_ACCOUNT_STORE" -Value "sql"
+Set-WebConfigEnvironmentVariable -Config $deployedWebConfig -Name "IMAP_PLUGIN_CREDENTIAL_PROVIDER" -Value "dev-sql-vault"
 if ($SqlConnectionString) {
   Set-WebConfigEnvironmentVariable -Config $deployedWebConfig -Name "IMAP_PLUGIN_SQL_CONNECTION_STRING" -Value $SqlConnectionString
 } elseif ($existingSqlConnectionString) {

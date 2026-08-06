@@ -1,7 +1,7 @@
 {
   "name": "imap-plugin",
   "version": "0.5.0-beta.0",
-  "description": "Codex-exclusive beta plugin MCP server for generic IMAP mailboxes.",
+  "description": "Hosted MCP server for generic IMAP mailboxes in Codex and compatible GPTs.",
   "type": "module",
   "main": "dist/server.js",
   "bin": {
@@ -11,6 +11,7 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/server.ts",
     "package:check": "npm run build && npm pack --dry-run",
+    "azure:check-env": "node scripts/check-azure-env.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/server.js"
   },
@@ -26,7 +27,9 @@
     "docs/privacy.html",
     "docs/styles.css",
     "docs/terms.html",
+    "scripts/check-azure-env.mjs",
     "scripts/setup-local-iis.ps1",
+    "scripts/start-setup-page.mjs",
     "web.config",
     "README.md"
   ],
@@ -36,11 +39,13 @@
     "express": "^5.2.1",
     "html-to-text": "^9.0.5",
     "imapflow": "^1.0.191",
-    "keytar": "^7.9.0",
     "mailparser": "^3.7.2",
     "mssql": "^12.7.0",
     "zod": "^3.23.8",
     "zod-to-json-schema": "^3.25.1"
+  },
+  "optionalDependencies": {
+    "keytar": "^7.9.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",

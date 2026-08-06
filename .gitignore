@@ -7,3 +7,6 @@ secrets/
 .tmp-license-test/
 logs/
 .iis-deploy/
+appservice-logs/
+*.zip
+deploy-stage/
