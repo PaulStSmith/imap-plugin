@@ -101,7 +101,7 @@
 
         <article class="plan featured">
           <div>
-            <h3>Mail Actions</h3>
+            <h3>Mail Actions Monthly</h3>
             <p class="price">$5<span>/month</span></p>
             <p>For people who want Codex to help compose and send mail.</p>
           </div>
@@ -117,25 +117,49 @@
             class="button primary plan-action"
             id="mail-actions-checkout"
             href="#plans"
-            data-checkout-url="https://buy.stripe.com/fZu28s1HK7lQ4xicIKcIE01"
+            data-checkout-url="https://buy.stripe.com/14AcN60DG9tY4xiaACcIE02"
           >Subscribe to Mail Actions</a>
-          <p class="plan-note">After checkout, give your Stripe subscription ID to Codex and ask it to activate Mail Actions for this installation.</p>
+          <p class="plan-note">Checkout asks for the installation ID shown by IMAP Mailboxes so activation can happen automatically.</p>
         </article>
 
         <article class="plan">
           <div>
-            <h3>Pro</h3>
-            <p class="price">Later</p>
-            <p>For heavier personal and team mailbox workflows.</p>
+            <h3>Mail Actions Annual</h3>
+            <p class="price">$50<span>/year</span></p>
+            <p>Two months free for people who expect to use mail actions regularly.</p>
           </div>
           <ul>
-            <li>Higher usage limits</li>
-            <li>Shared mailbox support</li>
-            <li>Vault-backed team credentials</li>
-            <li>Audit-friendly mail actions</li>
-            <li>Priority support</li>
+            <li>Everything in Mail Actions Monthly</li>
+            <li>Annual billing through Stripe</li>
+            <li>Same hosted setup and entitlement flow</li>
+            <li>Subscription lifecycle sync through webhooks</li>
           </ul>
-          <a class="button plan-action" href="#setup">Start with the beta</a>
+          <a
+            class="button plan-action"
+            href="#plans"
+            data-checkout-url="https://buy.stripe.com/28E3cw724eOi8Ny5gicIE03"
+          >Subscribe annually</a>
+          <p class="plan-note">Checkout asks for the same installation ID and creates a yearly Stripe subscription.</p>
+        </article>
+
+        <article class="plan">
+          <div>
+            <h3>Founder Lifetime</h3>
+            <p class="price">$249.99</p>
+            <p>A one-time Founder option for early supporters who want lifetime Mail Actions access.</p>
+          </div>
+          <ul>
+            <li>One-time Stripe payment</li>
+            <li>Lifetime Mail Actions entitlement for this beta/product</li>
+            <li>Hosted setup and automatic activation</li>
+            <li>Subject to fair use and current terms</li>
+          </ul>
+          <a
+            class="button plan-action"
+            href="#plans"
+            data-checkout-url="https://buy.stripe.com/bJe4gA4TW8pUd3O38acIE04"
+          >Become a Founder</a>
+          <p class="plan-note">Checkout asks for the installation ID so the one-time payment can unlock this installation.</p>
         </article>
       </div>
     </section>
@@ -156,7 +180,7 @@
         </article>
         <article>
           <h3>Setup and billing</h3>
-          <p>Open the setup page with <code>/imap-configure</code>, test before saving, check subscription status, and activate paid access with a Stripe subscription ID.</p>
+          <p>Open the setup page with <code>/imap-configure</code>, test before saving, check subscription status, and paste the installation ID into Stripe Checkout for automatic activation.</p>
         </article>
       </div>
     </section>
@@ -171,7 +195,7 @@
         <li>Click Try now and run <code>/imap-configure</code>. You can also ask Codex: <code>Open the IMAP plugin setup page</code>.</li>
         <li>Add your IMAP host, port, username, TLS setting, and SMTP settings if you plan to use Mail Actions.</li>
         <li>Use Test connection before saving the mailbox profile.</li>
-        <li>For Mail Actions, subscribe, give the Stripe subscription ID to Codex, then enable SMTP actions in the setup page.</li>
+        <li>For Mail Actions, copy the installation ID shown by the plugin, paste it into Stripe Checkout, then enable SMTP actions in the setup page after activation.</li>
         <li>For SMTP checks, use Round-trip to send only to that account's mailbox address, verify the message in its INBOX, and mark it read.</li>
       </ol>
     </section>

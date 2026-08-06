@@ -52,15 +52,23 @@ When a Codex instance tries to use a paid tool, the MCP server returns `subscrip
 
 - `plansUrl`: `https://paulstsmith.github.io/imap-plugin/#plans`
 - `paymentUrl`: the same plans URL, retained for clients that already look for a payment link
-- activation guidance telling the user to subscribe, then give the Stripe subscription ID back to Codex
+- activation guidance telling the user to subscribe with the installation ID shown by the plugin
 
-The plans page links to Stripe Checkout through a Payment Link. After checkout, the user gives their Stripe subscription ID to Codex. Codex calls:
+The plans page links to Stripe Checkout through Payment Links. Each checkout asks for the IMAP Mailboxes installation ID shown by the plugin, so the `checkout.session.completed` webhook can associate the Stripe payment with the correct entitlement row automatically.
+
+Current public checkout links:
+
+- Monthly Mail Actions, $5/month: `https://buy.stripe.com/14AcN60DG9tY4xiaACcIE02`
+- Annual Mail Actions, $50/year: `https://buy.stripe.com/28E3cw724eOi8Ny5gicIE03`
+- Founder Lifetime, $249.99 one time: `https://buy.stripe.com/bJe4gA4TW8pUd3O38acIE04`
+
+Manual activation remains available as a support fallback. If automatic checkout activation does not complete, the user can give their Stripe subscription ID to Codex and Codex can call:
 
 ```text
 imap_activate_subscription({"subscriptionId":"sub_..."})
 ```
 
-The MCP server validates the subscription with Stripe, reads the local installation ID, and writes the entitlement to `dbo.InstallationEntitlements`. Stripe customer and subscription references belong in `dbo.InstallationEntitlements`, not in `web.config` or per-install environment variables.
+The MCP server validates the subscription with Stripe, reads the installation ID, and writes the entitlement to `dbo.InstallationEntitlements`. Stripe customer and subscription/payment references belong in `dbo.InstallationEntitlements`, not in `web.config` or per-install environment variables.
 
 Automatic renewal and cancellation updates require a stable public MCP host URL. Do not register a Stripe webhook while the MCP host is still local, temporary, or unknown.
 
@@ -70,14 +78,12 @@ Once the MCP host is stable, configure Stripe to send subscription webhooks to:
 https://<public-mcp-host>/stripe/webhook
 ```
 
-Store the webhook signing secret as `IMAP_PLUGIN_STRIPE_WEBHOOK_SECRET` in the MCP host environment. The webhook updates an existing installation entitlement by Stripe subscription ID; the initial installation binding still happens through `imap_activate_subscription`.
+Store the webhook signing secret as `IMAP_PLUGIN_STRIPE_WEBHOOK_SECRET` in the MCP host environment. The webhook binds new checkouts by installation ID, updates recurring entitlements by Stripe subscription ID, and marks Founder Lifetime purchases with a `lifetime` entitlement status.
 
-Until that public host exists, use `imap_activate_subscription` as the activation path and reconcile subscription changes manually in `dbo.InstallationEntitlements`.
+Set `IMAP_PLUGIN_STRIPE_MAIL_ACTIONS_PRICE_IDS` to a comma-separated list of accepted recurring Mail Actions prices so both monthly and annual subscriptions validate:
 
-To make the GitHub Pages pricing button live, create a Stripe Payment Link for the Mail Actions recurring price and paste its public `https://buy.stripe.com/...` URL into `docs/index.html`:
-
-```html
-data-checkout-url="https://buy.stripe.com/fZu28s1HK7lQ4xicIKcIE01"
+```text
+IMAP_PLUGIN_STRIPE_MAIL_ACTIONS_PRICE_IDS=price_1U0jfRLELPI0KuVFShRkU2tv,price_1U1QfyLELPI0KuVFjy08cLuI
 ```
 
 For local development without a DB entitlement, simulate a live subscription with:

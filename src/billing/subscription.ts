@@ -76,7 +76,11 @@ export interface EntitlementSyncResult {
 
 const DEFAULT_PLANS_URL = "https://paulstsmith.github.io/imap-plugin/#plans";
 const DEFAULT_MAIL_ACTIONS_PRICE_ID = "price_1U0jfRLELPI0KuVFShRkU2tv";
-const LIVE_SUBSCRIPTION_STATUSES = new Set(["active", "trialing"]);
+const DEFAULT_MAIL_ACTIONS_PRICE_IDS = [
+  DEFAULT_MAIL_ACTIONS_PRICE_ID,
+  "price_1U1QfyLELPI0KuVFjy08cLuI"
+];
+const LIVE_SUBSCRIPTION_STATUSES = new Set(["active", "trialing", "lifetime"]);
 const STRIPE_API_BASE_URL = "https://api.stripe.com/v1";
 
 interface StripeSubscriptionItem {
@@ -93,6 +97,24 @@ interface StripeSubscription {
   items?: {
     data?: StripeSubscriptionItem[];
   };
+}
+
+interface StripeCheckoutSession {
+  id: string;
+  object: "checkout.session";
+  mode?: "payment" | "setup" | "subscription";
+  status?: string;
+  payment_status?: string;
+  customer?: string | { id?: string };
+  subscription?: string | { id?: string };
+  payment_intent?: string | { id?: string };
+  metadata?: Record<string, string>;
+  custom_fields?: Array<{
+    key?: string;
+    text?: {
+      value?: string | null;
+    };
+  }>;
 }
 
 export interface StripeWebhookEvent {
@@ -175,6 +197,20 @@ function stripePriceId(feature: PaidFeature): string | undefined {
   return undefined;
 }
 
+function stripePriceIds(feature: PaidFeature): string[] {
+  const configured = envValue("IMAP_PLUGIN_STRIPE_MAIL_ACTIONS_PRICE_IDS");
+  if (configured && feature === "mail_actions") {
+    return configured.split(",").map((value) => value.trim()).filter(Boolean);
+  }
+
+  const legacy = stripePriceId(feature);
+  if (feature === "mail_actions") {
+    return [...new Set([...(legacy ? [legacy] : []), ...DEFAULT_MAIL_ACTIONS_PRICE_IDS])];
+  }
+
+  return legacy ? [legacy] : [];
+}
+
 async function stripeGet<T>(secretKey: string, path: string, params?: URLSearchParams): Promise<T> {
   const url = new URL(`${STRIPE_API_BASE_URL}${path}`);
   if (params) {
@@ -194,20 +230,20 @@ async function stripeGet<T>(secretKey: string, path: string, params?: URLSearchP
   return body as T;
 }
 
-function customerId(subscription: StripeSubscription): string | undefined {
-  return typeof subscription.customer === "string" ? subscription.customer : subscription.customer?.id;
+function customerId(value: { customer?: string | { id?: string } }): string | undefined {
+  return typeof value.customer === "string" ? value.customer : value.customer?.id;
 }
 
 function validUntil(subscription: StripeSubscription): string | undefined {
   return subscription.current_period_end ? new Date(subscription.current_period_end * 1000).toISOString() : undefined;
 }
 
-function matchesFeature(subscription: StripeSubscription, priceId?: string): boolean {
-  if (!priceId) {
+function matchesAnyFeaturePrice(subscription: StripeSubscription, priceIds: string[]): boolean {
+  if (priceIds.length === 0) {
     return true;
   }
 
-  return subscription.items?.data?.some((item) => item.price?.id === priceId) ?? false;
+  return subscription.items?.data?.some((item) => item.price?.id && priceIds.includes(item.price.id)) ?? false;
 }
 
 function stripeSubscriptionFromObject(value: unknown): StripeSubscription | undefined {
@@ -221,6 +257,28 @@ function stripeSubscriptionFromObject(value: unknown): StripeSubscription | unde
   }
 
   return candidate as StripeSubscription;
+}
+
+function stripeCheckoutSessionFromObject(value: unknown): StripeCheckoutSession | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const candidate = value as Partial<StripeCheckoutSession> & { object?: string };
+  if (candidate.object !== "checkout.session" || !candidate.id || typeof candidate.id !== "string") {
+    return undefined;
+  }
+
+  return candidate as StripeCheckoutSession;
+}
+
+function objectId(value: string | { id?: string } | undefined): string | undefined {
+  return typeof value === "string" ? value : value?.id;
+}
+
+function checkoutInstallationId(session: StripeCheckoutSession): string | undefined {
+  const field = session.custom_fields?.find((candidate) => candidate.key?.toLowerCase() === "installationid");
+  return field?.text?.value?.trim();
 }
 
 function envSubscriptionStatus(feature: PaidFeature): SubscriptionStatus {
@@ -273,7 +331,7 @@ export async function activateSubscription(feature: PaidFeature, subscriptionId:
       new URLSearchParams([["expand[]", "items.data.price"]])
     );
     const status = stripeSubscription.status.toLowerCase();
-    const priceId = stripePriceId(feature);
+    const priceIds = stripePriceIds(feature);
     const stripe = {
       subscriptionId: stripeSubscription.id,
       customerId: customerId(stripeSubscription),
@@ -291,11 +349,11 @@ export async function activateSubscription(feature: PaidFeature, subscriptionId:
       };
     }
 
-    if (!matchesFeature(stripeSubscription, priceId)) {
+    if (!matchesAnyFeaturePrice(stripeSubscription, priceIds)) {
       return {
         ok: false,
         code: "subscription_price_mismatch",
-        message: "This Stripe subscription does not include the Mail Actions price.",
+        message: "This Stripe subscription does not include a Mail Actions price.",
         installation,
         stripe
       };
@@ -364,6 +422,83 @@ export async function syncStripeSubscriptionEntitlement(
   };
 }
 
+async function syncStripeCheckoutEntitlement(session: StripeCheckoutSession): Promise<EntitlementSyncResult> {
+  if (!hasSqlConnectionString()) {
+    return {
+      ok: false,
+      action: "ignored",
+      reason: "entitlement_db_not_configured"
+    };
+  }
+
+  const installationId = checkoutInstallationId(session);
+  if (!installationId) {
+    return {
+      ok: true,
+      action: "ignored",
+      reason: "checkout_installation_id_missing"
+    };
+  }
+
+  if (session.status && session.status !== "complete") {
+    return {
+      ok: true,
+      action: "ignored",
+      reason: `checkout_not_complete:${session.status}`
+    };
+  }
+
+  if (session.payment_status && !["paid", "no_payment_required"].includes(session.payment_status)) {
+    return {
+      ok: true,
+      action: "ignored",
+      reason: `checkout_not_paid:${session.payment_status}`
+    };
+  }
+
+  const plan = session.metadata?.plan;
+  const subscriptionId = objectId(session.subscription);
+  const paymentIntentId = objectId(session.payment_intent);
+
+  if (subscriptionId) {
+    const next = await upsertInstallationEntitlement({
+      installationId,
+      feature: "mail_actions",
+      status: "active",
+      customerId: customerId(session),
+      subscriptionId
+    });
+
+    return {
+      ok: true,
+      action: "updated",
+      entitlement: next
+    };
+  }
+
+  if (plan === "founder_lifetime" && paymentIntentId) {
+    const next = await upsertInstallationEntitlement({
+      installationId,
+      feature: "mail_actions",
+      status: "lifetime",
+      customerId: customerId(session),
+      subscriptionId: paymentIntentId
+    });
+
+    return {
+      ok: true,
+      action: "updated",
+      entitlement: next
+    };
+  }
+
+  return {
+    ok: true,
+    action: "ignored",
+    reason: `checkout_without_supported_payment:${session.id}`
+  };
+}
+
 export async function syncStripeSubscriptionById(feature: PaidFeature, subscriptionId: string): Promise<EntitlementSyncResult> {
   const secretKey = stripeSecretKey();
   if (!secretKey) {
@@ -384,6 +519,11 @@ export async function syncStripeSubscriptionById(feature: PaidFeature, subscript
 
 export async function handleStripeBillingEvent(event: StripeWebhookEvent): Promise<EntitlementSyncResult> {
   const object = event.data?.object;
+  const checkoutSession = stripeCheckoutSessionFromObject(object);
+  if (checkoutSession) {
+    return syncStripeCheckoutEntitlement(checkoutSession);
+  }
+
   const subscription = stripeSubscriptionFromObject(object);
   if (subscription) {
     return syncStripeSubscriptionEntitlement("mail_actions", subscription);
@@ -411,7 +551,7 @@ export async function subscriptionRequired(feature: PaidFeature, action: string)
     requiresSubscription: true,
     feature,
     action,
-    message: `${action} requires a Mail Actions subscription. Open the plans page, choose a plan, then give the Stripe subscription ID to Codex to activate this installation.`,
+    message: `${action} requires Mail Actions. Open the plans page, choose a plan, and paste this installation ID into Stripe Checkout so this installation can be activated automatically.`,
     installation,
     plansUrl: plansUrl(),
     paymentUrl: plansUrl()
