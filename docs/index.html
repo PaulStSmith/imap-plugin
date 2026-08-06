@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>IMAP Mailboxes Beta</title>
-  <meta name="description" content="Universal IMAP mailbox access for Codex and compatible GPTs, starting with safe read-only email search and message reading.">
+  <meta name="description" content="Hosted IMAP mailbox access for Codex and compatible GPTs, with free read tools and subscriber-controlled mail actions.">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
@@ -17,7 +17,8 @@
       <a href="#why">Why</a>
       <a href="#plans">Pricing</a>
       <a href="#setup">Setup</a>
-      <a href="#status">Roadmap</a>
+      <a href="#tools">Tools</a>
+      <a href="#status">Status</a>
     </nav>
   </header>
 
@@ -25,12 +26,12 @@
     <section class="hero">
       <div class="hero-inner">
         <div class="hero-copy-block">
-          <p class="eyebrow">Universal mailbox access for Codex and compatible GPTs</p>
+          <p class="eyebrow">Hosted MCP beta under marketplace review</p>
           <h1>IMAP Mailboxes Beta</h1>
           <p class="hero-copy">
-            Bring generic IMAP email accounts into Codex without waiting for a provider-specific connector.
-            Start with safe read-only search, summaries, and message reading; unlock send and mailbox actions when you need them.
-            This is a hosted MCP plugin for OpenAI surfaces that support remote MCP tools, not a background mailbox sync service.
+            Bring generic IMAP email accounts into Codex and compatible GPTs without waiting for a provider-specific connector.
+            The hosted MCP server is live on Azure, with free read tools for search and message access.
+            Mail Actions adds subscriber-controlled sending and mailbox changes.
             Use with non-OpenAI assistant systems is outside the project scope and at your own risk.
           </p>
           <div class="hero-actions">
@@ -56,11 +57,11 @@
         </article>
         <article>
           <h3>Read-first safety</h3>
-          <p>The free version focuses on folder listing, message search, message reading, and attachment metadata without send permissions.</p>
+          <p>The free version focuses on account setup, folder listing, message search, message reading, attachment access, folder status, and quota checks.</p>
         </article>
         <article>
-          <h3>Credential choice</h3>
-          <p>Use the hosted setup flow for public installs, with account metadata stored separately from mailbox credentials.</p>
+          <h3>Hosted setup</h3>
+          <p>Use the plugin setup page to add and test mailbox profiles. Account metadata and mailbox credentials are stored behind separate server-side boundaries.</p>
         </article>
       </div>
     </section>
@@ -71,8 +72,8 @@
         <h2>Sending should be deliberate.</h2>
       </div>
       <p>
-        The plugin starts read-only because email actions carry real risk. Paid sending will use explicit confirmation,
-        visible recipient and body review, and account identity checks before any SMTP action.
+        The plugin starts read-only because email actions carry real risk. Sending and mailbox mutations are gated behind
+        Mail Actions, a stable installation entitlement, and the plugin preference that enables SMTP actions for the account.
       </p>
     </section>
 
@@ -92,8 +93,8 @@
             <li>Connect one IMAP account</li>
             <li>List folders</li>
             <li>Search and read messages</li>
-            <li>Summarize inboxes and threads</li>
-            <li>Extract tasks and attachment metadata</li>
+            <li>Read attachments when needed</li>
+            <li>Check folder counts and quota</li>
           </ul>
           <a class="button plan-action" href="#setup">Configure free access</a>
         </article>
@@ -106,11 +107,11 @@
           </div>
           <ul>
             <li>SMTP send and reply workflows</li>
-            <li>Draft-first sending</li>
-            <li>Forward and reply with proper headers</li>
+            <li>Reply with proper message headers</li>
             <li>Guided round-trip tests to the account's own INBOX</li>
             <li>Move, archive, and mark messages</li>
-            <li>Multiple mailboxes</li>
+            <li>Create, rename, subscribe, and delete folders</li>
+            <li>Copy, append, and delete messages</li>
           </ul>
           <a
             class="button primary plan-action"
@@ -118,7 +119,7 @@
             href="#plans"
             data-checkout-url="https://buy.stripe.com/fZu28s1HK7lQ4xicIKcIE01"
           >Subscribe to Mail Actions</a>
-          <p class="plan-note">After checkout, give your Stripe subscription ID to Codex to activate this installation.</p>
+          <p class="plan-note">After checkout, give your Stripe subscription ID to Codex and ask it to activate Mail Actions for this installation.</p>
         </article>
 
         <article class="plan">
@@ -134,7 +135,28 @@
             <li>Audit-friendly mail actions</li>
             <li>Priority support</li>
           </ul>
-          <a class="button plan-action" href="#setup">Use Mail Actions first</a>
+          <a class="button plan-action" href="#setup">Start with the beta</a>
+        </article>
+      </div>
+    </section>
+
+    <section id="tools" class="section">
+      <div class="section-heading">
+        <p class="eyebrow">Tool surface</p>
+        <h2>Read tools are available first. Mail changes are explicit.</h2>
+      </div>
+      <div class="tool-columns">
+        <article>
+          <h3>Free read tools</h3>
+          <p>Configure accounts, list folders, search messages, read one or many messages, read attachments, check folder status, and inspect quota.</p>
+        </article>
+        <article>
+          <h3>Mail Actions</h3>
+          <p>Send, reply, update flags, color messages when supported, move, copy, delete, append, and manage folders after entitlement is active.</p>
+        </article>
+        <article>
+          <h3>Setup and billing</h3>
+          <p>Open the setup page with <code>/imap-configure</code>, test before saving, check subscription status, and activate paid access with a Stripe subscription ID.</p>
         </article>
       </div>
     </section>
@@ -142,26 +164,27 @@
     <section id="setup" class="section setup">
       <div class="section-heading">
         <p class="eyebrow">Setup</p>
-        <h2>Configure from the plugin page.</h2>
+        <h2>Configure from the hosted setup page.</h2>
       </div>
       <ol>
-        <li>Install IMAP Mailboxes from the plugin marketplace.</li>
+        <li>Install IMAP Mailboxes from the plugin marketplace after review approval.</li>
         <li>Click Try now and run <code>/imap-configure</code>. You can also ask Codex: <code>Open the IMAP plugin setup page</code>.</li>
-        <li>Add your IMAP host, port, username, TLS setting, and credential provider.</li>
+        <li>Add your IMAP host, port, username, TLS setting, and SMTP settings if you plan to use Mail Actions.</li>
         <li>Use Test connection before saving the mailbox profile.</li>
-        <li>For SMTP checks, use Round-trip to review From/To, send only to that account's mailbox address, verify the message in its INBOX, and mark it read.</li>
+        <li>For Mail Actions, subscribe, give the Stripe subscription ID to Codex, then enable SMTP actions in the setup page.</li>
+        <li>For SMTP checks, use Round-trip to send only to that account's mailbox address, verify the message in its INBOX, and mark it read.</li>
       </ol>
     </section>
 
     <section id="status" class="section status-section">
       <div class="section-heading">
-        <p class="eyebrow">Roadmap</p>
-        <h2>Private beta today. Public distribution next.</h2>
+        <p class="eyebrow">Current state</p>
+        <h2>Hosted beta submitted for marketplace review.</h2>
       </div>
       <p>
-        IMAP Mailboxes is available as a hosted MCP beta backed by a public endpoint. The plugin is being hardened for broader
-        distribution across OpenAI surfaces that support remote MCP tools. Claude, Gemini, and other non-OpenAI assistant systems
-        are outside the project scope; any use there is at your own risk.
+        IMAP Mailboxes is backed by a live Azure-hosted MCP endpoint and SQL account store. The marketplace listing has been
+        submitted for review. OpenAI surfaces that support remote MCP tools are the supported target; Claude, Gemini, and other
+        non-OpenAI assistant systems are outside the project scope.
       </p>
     </section>
   </main>

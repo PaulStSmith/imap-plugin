@@ -215,7 +215,8 @@ h3 {
 }
 
 .feature-grid,
-.pricing-grid {
+.pricing-grid,
+.tool-columns {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 18px;
@@ -228,11 +229,13 @@ article,
   background: var(--panel);
 }
 
-.feature-grid article {
+.feature-grid article,
+.tool-columns article {
   padding: 22px;
 }
 
 .feature-grid p,
+.tool-columns p,
 .plan p,
 .band p,
 .setup li {
@@ -375,7 +378,8 @@ footer {
   }
 
   .feature-grid,
-  .pricing-grid {
+  .pricing-grid,
+  .tool-columns {
     grid-template-columns: 1fr;
   }
 
