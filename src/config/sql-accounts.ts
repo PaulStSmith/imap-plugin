@@ -44,7 +44,12 @@ BEGIN
   );
 END;
 `);
-  })();
+  })().catch((error: unknown) => {
+    // Do not permanently poison this worker after a transient SQL failure.
+    // A later MCP request should be able to retry schema initialization.
+    schemaPromise = undefined;
+    throw error;
+  });
 
   return schemaPromise;
 }
@@ -83,8 +88,20 @@ function bindAccount(request: sql.Request, account: AccountProfile): sql.Request
 }
 
 export async function readSqlAccounts(): Promise<AccountProfile[]> {
-  await ensureSchema();
   const connection = await sqlPool();
+  try {
+    return await selectAccounts(connection);
+  } catch (error) {
+    if ((error as { number?: number }).number !== 208) {
+      throw error;
+    }
+
+    await ensureSchema();
+    return selectAccounts(connection);
+  }
+}
+
+async function selectAccounts(connection: sql.ConnectionPool): Promise<AccountProfile[]> {
   const result = await connection.request().query<AccountRow>(`
 SELECT
   Id AS id,
