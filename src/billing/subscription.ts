@@ -105,6 +105,7 @@ interface StripeCheckoutSession {
   mode?: "payment" | "setup" | "subscription";
   status?: string;
   payment_status?: string;
+  amount_total?: number | null;
   customer?: string | { id?: string };
   subscription?: string | { id?: string };
   payment_intent?: string | { id?: string };
@@ -459,8 +460,10 @@ async function syncStripeCheckoutEntitlement(session: StripeCheckoutSession): Pr
   const plan = session.metadata?.plan;
   const subscriptionId = objectId(session.subscription);
   const paymentIntentId = objectId(session.payment_intent);
+  const zeroTotalFounderCheckout = session.amount_total === 0
+    && ["paid", "no_payment_required"].includes(session.payment_status ?? "");
   const lifetimeReferenceId = paymentIntentId
-    ?? (session.payment_status === "no_payment_required" ? session.id : undefined);
+    ?? (zeroTotalFounderCheckout ? session.id : undefined);
 
   if (subscriptionId) {
     const next = await upsertInstallationEntitlement({
