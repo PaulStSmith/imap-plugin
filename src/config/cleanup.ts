@@ -12,7 +12,7 @@ export interface ConfigCleanupResult {
   removedLocalKeychainSecrets: string[];
   externalSecrets: Array<{
     accountId: string;
-    provider: "env" | "1password" | "dev-sql-vault";
+    provider: "env" | "1password" | "sql-vault" | "dev-sql-vault";
     reference: string;
   }>;
   errors: Array<{
@@ -40,13 +40,13 @@ export async function cleanupConfig(): Promise<ConfigCleanupResult> {
   const accounts = await readAccounts();
 
   for (const account of accounts) {
-    if (account.credentialProvider === "local-keychain" || account.credentialProvider === "dev-sql-vault") {
+    if (account.credentialProvider === "local-keychain" || account.credentialProvider === "sql-vault" || account.credentialProvider === "dev-sql-vault") {
       try {
         await createCredentialProvider(account.credentialProvider).delete?.(account);
         removedLocalKeychainSecrets.push(account.id);
       } catch (error) {
         errors.push({
-          target: `local-keychain:${account.id}`,
+          target: `${account.credentialProvider}:${account.id}`,
           message: errorMessage(error)
         });
       }

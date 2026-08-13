@@ -21,7 +21,7 @@ export interface SetupServerInfo {
   token: string;
 }
 
-const SETUP_UI_VERSION = "20260804.1040";
+const SETUP_UI_VERSION = "20260812.2230";
 const DISCOVERY_DNS_TIMEOUT_MS = 3500;
 const DISCOVERY_LOOKUP_TIMEOUT_MS = 2500;
 
@@ -985,6 +985,12 @@ function renderSetupPage(token: string): string {
       description: "Stores local development secrets in SQL Server to emulate Azure Key Vault.",
       infoTitle: "The dev SQL vault",
       infoBody: "IMAP Mailboxes stores account metadata and secret values in separate SQL tables so local testing follows the public MCP credential shape."
+    },
+    "sql-vault": {
+      label: "SQL vault",
+      description: "Stores mailbox credentials separately from account profiles in the configured SQL database.",
+      infoTitle: "The SQL vault",
+      infoBody: "IMAP Mailboxes stores account metadata and mailbox credentials in separate SQL tables. The database connection is restricted to the hosted service and Azure SQL encrypts the database at rest."
     },
     env: {
       label: "Environment variable",
@@ -2169,6 +2175,8 @@ function renderSetupPage(token: string): string {
           return "Local keychain";
         case "dev-sql-vault":
           return "Dev SQL vault";
+        case "sql-vault":
+          return "SQL vault";
         case "1password":
           return "1Password";
         case "env":

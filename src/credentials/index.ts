@@ -4,6 +4,7 @@ import { EnvCredentialProvider } from "./env.js";
 import { LocalKeychainCredentialProvider } from "./local-keychain.js";
 import { OnePasswordCredentialProvider } from "./one-password.js";
 import { DevSqlVaultCredentialProvider, devSqlVaultCredentialRef } from "./dev-sql-vault.js";
+import { SqlVaultCredentialProvider, sqlVaultCredentialRef } from "./sql-vault.js";
 
 export function createCredentialProvider(kind: CredentialProviderKind): CredentialProvider {
   switch (kind) {
@@ -13,6 +14,8 @@ export function createCredentialProvider(kind: CredentialProviderKind): Credenti
       return new OnePasswordCredentialProvider();
     case "env":
       return new EnvCredentialProvider();
+    case "sql-vault":
+      return new SqlVaultCredentialProvider();
     case "dev-sql-vault":
       return new DevSqlVaultCredentialProvider();
   }
@@ -20,7 +23,7 @@ export function createCredentialProvider(kind: CredentialProviderKind): Credenti
 
 export function defaultCredentialProviderKind(): CredentialProviderKind {
   const configured = process.env.IMAP_PLUGIN_CREDENTIAL_PROVIDER;
-  if (configured === "1password" || configured === "env" || configured === "local-keychain" || configured === "dev-sql-vault") {
+  if (configured === "1password" || configured === "env" || configured === "local-keychain" || configured === "sql-vault" || configured === "dev-sql-vault") {
     return configured;
   }
 
@@ -32,10 +35,14 @@ export function providerForAccount(account: AccountProfile): CredentialProvider 
 }
 
 export function storesPassword(provider: CredentialProviderKind): boolean {
-  return provider === "local-keychain" || provider === "dev-sql-vault";
+  return provider === "local-keychain" || provider === "sql-vault" || provider === "dev-sql-vault";
 }
 
 export function credentialRefForAccount(account: AccountProfile): string | undefined {
+  if (account.credentialProvider === "sql-vault") {
+    return sqlVaultCredentialRef(account);
+  }
+
   if (account.credentialProvider === "dev-sql-vault") {
     return devSqlVaultCredentialRef(account);
   }

@@ -113,6 +113,7 @@ Set `IMAP_PLUGIN_CREDENTIAL_PROVIDER` to choose a provider:
 - `local-keychain`: stores passwords in the OS credential store through `keytar`.
 - `1password`: reads passwords from 1Password using `op read`.
 - `env`: reads passwords from environment variables for development.
+- `sql-vault`: stores mailbox credentials in the configured SQL database for hosted deployments.
 - `dev-sql-vault`: stores development secrets in SQL Server to emulate Azure Key Vault locally.
 
 The default provider is `local-keychain`.
@@ -171,7 +172,9 @@ Local Codex installs use stdio by default. For Azure App Service or another publ
 
 ```bash
 set IMAP_PLUGIN_TRANSPORT=http
-set IMAP_PLUGIN_CREDENTIAL_PROVIDER=env
+set IMAP_PLUGIN_ACCOUNT_STORE=sql
+set IMAP_PLUGIN_CREDENTIAL_PROVIDER=sql-vault
+set IMAP_PLUGIN_SQL_CONNECTION_STRING=<sql-connection-string>
 npm start
 ```
 
@@ -180,7 +183,7 @@ The HTTP server listens on `process.env.PORT`, exposes `GET /health`, and serves
 ```bash
 NODE_ENV=production
 IMAP_PLUGIN_TRANSPORT=http
-IMAP_PLUGIN_CREDENTIAL_PROVIDER=env
+IMAP_PLUGIN_CREDENTIAL_PROVIDER=sql-vault
 IMAP_PLUGIN_PUBLIC_BASE_URL=https://<app-name>.azurewebsites.net
 IMAP_PLUGIN_SETUP_TOKEN=<strong-random-setup-token>
 ```
@@ -198,7 +201,7 @@ IMAP_PLUGIN_ACCOUNT_STORE=sql
 IMAP_PLUGIN_SQL_CONNECTION_STRING=<azure-sql-connection-string>
 ```
 
-Do not use `local-keychain` on a public App Service host. Use environment-backed demo credentials, Azure Key Vault, or a hosted per-user credential flow.
+Do not use `local-keychain` on a public App Service host. Use `sql-vault` with the SQL-backed account store so passwords submitted through the setup UI remain available to mailbox tools.
 
 The checked-in `web.config` is intentionally production-safe: it starts `node .\dist\server.js`, sets `NODE_ENV=production`, and enables `IMAP_PLUGIN_TRANSPORT=http`. Keep secrets, the public base URL, SQL connection strings, and credential-provider choices in Azure App Service application settings.
 
