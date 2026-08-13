@@ -650,7 +650,7 @@ function roundTripSender(account: AccountProfile): string {
 async function testInputAccount(rawInput: unknown) {
   const input = addAccountSchema.parse(rawInput);
   const account = accountFromInput(input);
-  const overridePassword = storesPassword(account.credentialProvider) ? input.password : undefined;
+  const overridePassword = input.password;
   const paid = (await subscriptionStatus("mail_actions")).live;
   try {
     return {
@@ -712,7 +712,7 @@ async function roundTripAccount(account: AccountProfile, overridePassword?: stri
         uids: [messages[0].uid],
         mode: "add",
         flags: ["\\Seen"]
-      });
+      }, overridePassword);
 
       return {
         ok: true,
@@ -761,7 +761,7 @@ async function roundTripInputAccount(rawInput: unknown) {
 
   const input = addAccountSchema.parse(rawInput);
   const account = accountFromInput(input);
-  const overridePassword = storesPassword(account.credentialProvider) ? input.password : undefined;
+  const overridePassword = input.password;
   try {
     return await roundTripAccount(account, overridePassword);
   } catch (error) {

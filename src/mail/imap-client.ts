@@ -439,7 +439,7 @@ export async function searchAndReadMessages(account: AccountProfile, options: Se
   });
 }
 
-export async function updateMessageFlags(account: AccountProfile, options: MessageFlagOptions): Promise<{ ok: boolean }> {
+export async function updateMessageFlags(account: AccountProfile, options: MessageFlagOptions, overridePassword?: string): Promise<{ ok: boolean }> {
   return withClient(account, async (client) =>
     withMailbox(client, options.mailbox, async () => {
       const flags = normalizeFlags(options.flags);
@@ -450,7 +450,8 @@ export async function updateMessageFlags(account: AccountProfile, options: Messa
           : await client.messageFlagsAdd(options.uids, flags, { uid: true });
 
       return { ok };
-    })
+    }),
+    overridePassword
   );
 }
 

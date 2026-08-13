@@ -226,7 +226,9 @@ export async function replyToMessage(account: AccountProfile, options: ReplyMess
 }
 
 async function smtpConfig(account: AccountProfile, options: Pick<SendMessageOptions, "smtpHost" | "smtpPort" | "smtpSecure" | "smtpUsername"> & { overridePassword?: string }): Promise<SmtpConfig> {
-  const credential = await providerForAccount(account).get(account);
+  const credential = options.overridePassword
+    ? { username: account.username, password: options.overridePassword }
+    : await providerForAccount(account).get(account);
   const secure = options.smtpSecure ?? account.smtpSecure ?? false;
   return {
     host: options.smtpHost || account.smtpHost || derivedSmtpHost(account.host),
