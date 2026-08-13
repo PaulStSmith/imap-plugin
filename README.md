@@ -18,7 +18,7 @@ SMTP sending and mailbox actions are gated by a stable IMAP Mailboxes installati
 
 ## Installation Entitlement
 
-Mail action tools call the entitlement gate before performing sends or mailbox mutations. Each local install creates an `installation.json` file in the plugin config directory with a stable `installationId`. Read it with:
+Mail action tools call the entitlement gate before performing sends or mailbox mutations. Local installs use an `installation.json` file by default. Hosted SQL deployments set `IMAP_PLUGIN_INSTALLATION_STORE=sql` and keep the stable identity in `dbo.PluginInstallations`; the first SQL-backed startup seeds that table from an existing `installation.json` when one is available. Read the active identity with:
 
 ```text
 imap_installation_status
@@ -173,6 +173,7 @@ Local Codex installs use stdio by default. For Azure App Service or another publ
 ```bash
 set IMAP_PLUGIN_TRANSPORT=http
 set IMAP_PLUGIN_ACCOUNT_STORE=sql
+set IMAP_PLUGIN_INSTALLATION_STORE=sql
 set IMAP_PLUGIN_CREDENTIAL_PROVIDER=sql-vault
 set IMAP_PLUGIN_SQL_CONNECTION_STRING=<sql-connection-string>
 npm start
@@ -183,6 +184,7 @@ The HTTP server listens on `process.env.PORT`, exposes `GET /health`, and serves
 ```bash
 NODE_ENV=production
 IMAP_PLUGIN_TRANSPORT=http
+IMAP_PLUGIN_INSTALLATION_STORE=sql
 IMAP_PLUGIN_CREDENTIAL_PROVIDER=sql-vault
 IMAP_PLUGIN_PUBLIC_BASE_URL=https://<app-name>.azurewebsites.net
 IMAP_PLUGIN_SETUP_TOKEN=<strong-random-setup-token>
@@ -198,10 +200,11 @@ For a SQL-backed public setup, also set:
 
 ```bash
 IMAP_PLUGIN_ACCOUNT_STORE=sql
+IMAP_PLUGIN_INSTALLATION_STORE=sql
 IMAP_PLUGIN_SQL_CONNECTION_STRING=<azure-sql-connection-string>
 ```
 
-Do not use `local-keychain` on a public App Service host. Use `sql-vault` with the SQL-backed account store so passwords submitted through the setup UI remain available to mailbox tools.
+Do not use `local-keychain` on a public App Service host. Use `sql-vault` with the SQL-backed account store so passwords submitted through the setup UI remain available to mailbox tools. Keep the hosted installation identity in SQL as well; do not rely on App Service deployment folders for `installation.json`.
 
 The checked-in `web.config` is intentionally production-safe: it starts `node .\dist\server.js`, sets `NODE_ENV=production`, and enables `IMAP_PLUGIN_TRANSPORT=http`. Keep secrets, the public base URL, SQL connection strings, and credential-provider choices in Azure App Service application settings.
 

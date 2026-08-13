@@ -54,6 +54,11 @@ async function startHttpServer(): Promise<void> {
       name: "imap-plugin",
       version: SERVER_VERSION,
       transport: "streamable-http",
+      configuration: {
+        accountStore: process.env.IMAP_PLUGIN_ACCOUNT_STORE?.trim() || "file",
+        credentialProvider: process.env.IMAP_PLUGIN_CREDENTIAL_PROVIDER?.trim() || "env",
+        installationStore: process.env.IMAP_PLUGIN_INSTALLATION_STORE?.trim() || "file"
+      },
       dependencies: {
         sql
       }

@@ -1,5 +1,6 @@
 const required = [
   "IMAP_PLUGIN_TRANSPORT",
+  "IMAP_PLUGIN_INSTALLATION_STORE",
   "IMAP_PLUGIN_CREDENTIAL_PROVIDER",
   "IMAP_PLUGIN_PUBLIC_BASE_URL",
   "IMAP_PLUGIN_SETUP_TOKEN"
@@ -31,12 +32,20 @@ if (process.env.IMAP_PLUGIN_CREDENTIAL_PROVIDER === "dev-sql-vault" && process.e
   warnings.push('IMAP_PLUGIN_CREDENTIAL_PROVIDER="dev-sql-vault" is intended for local development, not production.');
 }
 
+if (process.env.IMAP_PLUGIN_INSTALLATION_STORE !== "sql") {
+  warnings.push('IMAP_PLUGIN_INSTALLATION_STORE must be "sql" on Azure App Service so clean deployments retain the installation identity.');
+}
+
 if (process.env.IMAP_PLUGIN_CREDENTIAL_PROVIDER === "sql-vault" && process.env.IMAP_PLUGIN_ACCOUNT_STORE !== "sql") {
   warnings.push('IMAP_PLUGIN_ACCOUNT_STORE must be "sql" when IMAP_PLUGIN_CREDENTIAL_PROVIDER="sql-vault".');
 }
 
 if (process.env.IMAP_PLUGIN_ACCOUNT_STORE === "sql" && !process.env.IMAP_PLUGIN_SQL_CONNECTION_STRING?.trim()) {
   warnings.push("IMAP_PLUGIN_SQL_CONNECTION_STRING is required when IMAP_PLUGIN_ACCOUNT_STORE=sql.");
+}
+
+if (process.env.IMAP_PLUGIN_INSTALLATION_STORE === "sql" && !process.env.IMAP_PLUGIN_SQL_CONNECTION_STRING?.trim()) {
+  warnings.push("IMAP_PLUGIN_SQL_CONNECTION_STRING is required when IMAP_PLUGIN_INSTALLATION_STORE=sql.");
 }
 
 if (!process.env.IMAP_PLUGIN_PUBLIC_BASE_URL?.startsWith("https://")) {
