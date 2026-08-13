@@ -459,6 +459,8 @@ async function syncStripeCheckoutEntitlement(session: StripeCheckoutSession): Pr
   const plan = session.metadata?.plan;
   const subscriptionId = objectId(session.subscription);
   const paymentIntentId = objectId(session.payment_intent);
+  const lifetimeReferenceId = paymentIntentId
+    ?? (session.payment_status === "no_payment_required" ? session.id : undefined);
 
   if (subscriptionId) {
     const next = await upsertInstallationEntitlement({
@@ -476,13 +478,13 @@ async function syncStripeCheckoutEntitlement(session: StripeCheckoutSession): Pr
     };
   }
 
-  if (plan === "founder_lifetime" && paymentIntentId) {
+  if (plan === "founder_lifetime" && lifetimeReferenceId) {
     const next = await upsertInstallationEntitlement({
       installationId,
       feature: "mail_actions",
       status: "lifetime",
       customerId: customerId(session),
-      subscriptionId: paymentIntentId
+      subscriptionId: lifetimeReferenceId
     });
 
     return {
