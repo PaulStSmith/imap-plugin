@@ -4,8 +4,10 @@ import { TLSSocket, connect as tlsConnect } from "node:tls";
 import { AccountProfile } from "../types.js";
 import { providerForAccount } from "../credentials/index.js";
 import { readMessage } from "./imap-client.js";
+import { attachmentPart, attachmentsSchema, OutgoingAttachment } from "./attachments.js";
 
 export interface SendMessageOptions {
+  attachments?: OutgoingAttachment[];
   to: string[];
   cc?: string[];
   bcc?: string[];
@@ -28,6 +30,7 @@ export interface TestSmtpOptions {
 }
 
 export interface ReplyMessageOptions {
+  attachments?: OutgoingAttachment[];
   mailbox: string;
   uid: number;
   replyAll: boolean;
@@ -159,7 +162,8 @@ export async function sendMessage(account: AccountProfile, options: SendMessageO
     cc: options.cc,
     subject: options.subject,
     text: options.text,
-    html: options.html
+    html: options.html,
+    attachments: options.attachments
   });
 
   return sendRawMessage(config, from, envelopeTo, raw);
@@ -218,6 +222,7 @@ export async function replyToMessage(account: AccountProfile, options: ReplyMess
     subject,
     text: options.text,
     html: options.html,
+    attachments: options.attachments,
     inReplyTo: original.messageId ?? undefined,
     references
   });
@@ -283,7 +288,7 @@ async function sendRawMessage(config: SmtpConfig, from: string, recipients: stri
   }
 }
 
-function buildMessage(options: {
+export function buildMessage(options: {
   from: string;
   to: string[];
   cc?: string[];
@@ -293,7 +298,9 @@ function buildMessage(options: {
   html?: string;
   inReplyTo?: string;
   references?: string[];
+  attachments?: OutgoingAttachment[];
 }): string {
+  const attachments = attachmentsSchema.parse(options.attachments ?? []);
   const messageId = `<${randomUUID()}@imap-plugin.local>`;
   const boundary = `bf-${randomUUID()}`;
   const headers = [
@@ -308,9 +315,7 @@ function buildMessage(options: {
     "MIME-Version: 1.0"
   ].filter(Boolean);
 
-  if (options.html) {
-    return [
-      ...headers,
+  const body = options.html ? [
       `Content-Type: multipart/alternative; boundary="${boundary}"`,
       "",
       `--${boundary}`,
@@ -325,15 +330,27 @@ function buildMessage(options: {
       options.html,
       `--${boundary}--`,
       ""
-    ].join("\r\n");
-  }
-
-  return [
-    ...headers,
+    ].join("\r\n") : [
     "Content-Type: text/plain; charset=utf-8",
     "Content-Transfer-Encoding: 8bit",
     "",
     options.text || "",
+    ""
+  ].join("\r\n");
+
+  if (!attachments.length) {
+    return [...headers, body].join("\r\n");
+  }
+
+  const mixedBoundary = `mixed-${randomUUID()}`;
+  return [
+    ...headers,
+    `Content-Type: multipart/mixed; boundary="${mixedBoundary}"`,
+    "",
+    `--${mixedBoundary}`,
+    body,
+    ...attachments.flatMap((attachment) => [`--${mixedBoundary}`, attachmentPart(attachment)]),
+    `--${mixedBoundary}--`,
     ""
   ].join("\r\n");
 }

@@ -354,6 +354,36 @@ imap-plugin account add personal \
 - `imap_read_attachment`
 - `imap_read_messages`
 - `imap_search_and_read_messages`
+- `imap_send_message`
+- `imap_reply_message`
+
+## Sending Attachments
+
+`imap_send_message` and `imap_reply_message` accept an optional `attachments` array.
+Delivery uses the account's SMTP server and requires installation entitlement and SMTP sending enabled in plugin settings.
+
+```json
+{
+  "accountId": "personal",
+  "to": ["recipient@example.com"],
+  "subject": "Attached report",
+  "text": "Please see the attached file.",
+  "attachments": [
+    {
+      "filename": "hello.txt",
+      "contentType": "text/plain",
+      "contentBase64": "SGVsbG8="
+    }
+  ]
+}
+```
+
+Supply file bytes as standard padded base64 without whitespace or a data URL prefix.
+`contentType` defaults to `application/octet-stream`. Unicode filenames and empty files are supported.
+Limits are 10 files, 5 MiB per file, and 20 MiB combined, measured before base64 encoding.
+The HTTP JSON request limit is 30 MiB to accommodate base64 overhead; hosting proxies and mail providers may impose lower limits.
+Replies attach only the supplied files; original attachments are not automatically included.
+`imap_append_message` can separately store a complete raw MIME message in an IMAP folder, but does not deliver it to recipients.
 
 ## Search Filters
 

@@ -218,7 +218,7 @@ export function registerTools(server: McpServer): void {
     return jsonResponse({ folder: folder ?? null });
   });
 
-  server.tool("imap_send_message", "Send an email through the account SMTP server. Requires installation entitlement.", sendMessageSchema.shape, async (input) => {
+  server.tool("imap_send_message", "Send an email with optional base64 attachments through the account SMTP server. Requires installation entitlement.", sendMessageSchema.shape, async (input) => {
     const required = await paidAction("Send email");
     if (required) return jsonResponse(required);
     const disabled = await requireSmtpSendingEnabled();
@@ -226,7 +226,7 @@ export function registerTools(server: McpServer): void {
     return jsonResponse({ sent: await sendMessage(await getAccount(input.accountId), input) });
   });
 
-  server.tool("imap_reply_message", "Reply to an IMAP message through SMTP. Requires installation entitlement.", replyMessageSchema.shape, async (input) => {
+  server.tool("imap_reply_message", "Reply to an IMAP message through SMTP with optional base64 attachments. Requires installation entitlement.", replyMessageSchema.shape, async (input) => {
     const required = await paidAction("Reply to email");
     if (required) return jsonResponse(required);
     const disabled = await requireSmtpSendingEnabled();

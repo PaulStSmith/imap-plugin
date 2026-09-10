@@ -43,6 +43,7 @@ async function startHttpServer(): Promise<void> {
     response.status(result.ok ? 200 : 400).json(result);
   });
 
+  app.use("/mcp", express.json({ limit: "30mb" }));
   app.use(express.json());
 
   app.get("/health", async (_request: HttpRequest, response: HttpResponse) => {

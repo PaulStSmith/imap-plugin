@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { attachmentsSchema } from "../mail/attachments.js";
 
 export const accountIdSchema = z.object({
   accountId: z.string().min(1).describe("Configured account id.")
@@ -128,7 +129,8 @@ export const sendMessageSchema = accountIdSchema.merge(smtpOverrideSchema).exten
   bcc: optionalAddressListSchema,
   subject: z.string().default(""),
   text: z.string().optional(),
-  html: z.string().optional()
+  html: z.string().optional(),
+  attachments: attachmentsSchema.optional()
 });
 
 export const replyMessageSchema = readMessageSchema.merge(smtpOverrideSchema).extend({
@@ -138,7 +140,8 @@ export const replyMessageSchema = readMessageSchema.merge(smtpOverrideSchema).ex
   bcc: optionalAddressListSchema,
   subject: z.string().optional(),
   text: z.string().min(1),
-  html: z.string().optional()
+  html: z.string().optional(),
+  attachments: attachmentsSchema.optional()
 });
 
 export const preferencesSchema = z.object({
